@@ -3,7 +3,7 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -17,7 +17,7 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
+        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
         jdbc:
           batch_size: 20
         order_inserts: true
@@ -29,16 +29,16 @@ spring:
       enabled: false
 
   mail:
-    host: ${MAIL_HOST}
+    host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: true
+          auth: ${MAIL_SMTP_AUTH:false}
           starttls:
-            enable: true
+            enable: ${MAIL_SMTP_STARTTLS:false}
 
 logging:
   level:
@@ -59,8 +59,8 @@ management:
 
 app:
   reset-password:
-    expose-link: false
+    expose-link: ${RESET_PASSWORD_EXPOSE_LINK:true}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   seeder:
-    enabled: false
+    enabled: ${SEEDER_ENABLED:false}
