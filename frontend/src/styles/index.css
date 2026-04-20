@@ -1,0 +1,402 @@
+:root {
+  /* Brand Colors */
+  --primary: #FF4B2B;          /* Fiery orange-red — main CTAs, accents */
+  --primary-dark: #E63E20;     /* Hover state for primary */
+  --primary-light: #FF6B4A;    /* Light variant */
+  --primary-glow: rgba(255, 75, 43, 0.15); /* Glow/shadow for primary elements */
+
+  /* Neutral Palette */
+  --bg: #F8F5F2;               /* Warm off-white page background */
+  --surface: #FFFFFF;          /* Card and panel surfaces */
+  --surface-2: #F2EEE9;        /* Secondary surface (input backgrounds, etc.) */
+  --border: #E8E1D9;           /* Subtle borders */
+  --border-focus: #FF4B2B;     /* Border color when input is focused */
+
+  /* Text Colors */
+  --text-primary: #1A1612;     /* Main body text — warm near-black */
+  --text-secondary: #6B6258;   /* Muted text (descriptions, labels) */
+  --text-disabled: #B5ADA5;    /* Placeholder text */
+  --text-on-primary: #FFFFFF;  /* Text on primary-colored backgrounds */
+
+  /* Status Colors */
+  --success: #22C55E;
+  --success-bg: #F0FDF4;
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
+  --error: #EF4444;
+  --error-bg: #FEF2F2;
+  --info: #3B82F6;
+
+  /* Typography */
+  --font-display: 'Syne', sans-serif;   /* Headings, brand name */
+  --font-body: 'DM Sans', sans-serif;   /* All other text */
+
+  /* Spacing Scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(26, 22, 18, 0.08), 0 1px 2px rgba(26, 22, 18, 0.04);
+  --shadow-md: 0 4px 16px rgba(26, 22, 18, 0.10), 0 2px 4px rgba(26, 22, 18, 0.06);
+  --shadow-lg: 0 8px 32px rgba(26, 22, 18, 0.12), 0 4px 8px rgba(26, 22, 18, 0.08);
+  --shadow-primary: 0 4px 20px rgba(255, 75, 43, 0.30);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
+
+  /* Layout */
+  --navbar-height: 70px;
+  --container-max: 1200px;
+  --sidebar-width: 320px;
+}
+
+/* ============================================================
+   2. CSS RESET + BASE STYLES
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Scrollbar styling (WebKit browsers) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-disabled); }
+
+img { max-width: 100%; height: auto; display: block; }
+button { cursor: pointer; font-family: var(--font-body); }
+a { color: inherit; text-decoration: none; }
+input, textarea, select { font-family: var(--font-body); }
+
+/* Page wrapper — accounts for fixed navbar */
+.page-wrapper {
+  padding-top: var(--navbar-height);
+  min-height: 100vh;
+}
+
+/* Max-width container, centered */
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-lg);
+}
+
+/* ============================================================
+   3. TYPOGRAPHY UTILITIES
+   ============================================================ */
+.font-display { font-family: var(--font-display); }
+.text-primary { color: var(--primary); }
+.text-muted { color: var(--text-secondary); }
+.text-sm { font-size: 0.875rem; }
+.text-xs { font-size: 0.75rem; }
+.text-lg { font-size: 1.125rem; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+
+/* ============================================================
+   4. BUTTON SYSTEM
+   ============================================================ */
+
+/* Base button — all buttons share these */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border: none;
+  transition: all var(--transition-base);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Primary: fiery red — main CTAs (Add to Cart, Place Order, Login) */
+.btn-primary {
+  background: var(--primary);
+  color: var(--text-on-primary);
+  box-shadow: var(--shadow-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(255, 75, 43, 0.38);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+/* Ghost: transparent with border */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-glow);
+}
+
+/* Danger: for destructive actions */
+.btn-danger {
+  background: var(--error);
+  color: white;
+}
+.btn-danger:hover:not(:disabled) { background: #DC2626; }
+
+/* Size variants */
+.btn-sm { padding: 8px 16px; font-size: 0.875rem; }
+.btn-lg { padding: 14px 32px; font-size: 1rem; }
+.btn-full { width: 100%; }
+.btn-icon { padding: 10px; border-radius: var(--radius-md); }
+
+/* ============================================================
+   5. FORM CONTROLS
+   ============================================================ */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  outline: none;
+}
+.form-input::placeholder { color: var(--text-disabled); }
+.form-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+.form-input.error { border-color: var(--error); }
+
+.form-error {
+  font-size: 0.8125rem;
+  color: var(--error);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============================================================
+   6. CARD COMPONENT
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.card-body { padding: var(--space-lg); }
+
+/* ============================================================
+   7. BADGE / TAG COMPONENTS
+   ============================================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.badge-primary { background: var(--primary-glow); color: var(--primary); }
+.badge-success { background: var(--success-bg); color: var(--success); }
+.badge-warning { background: var(--warning-bg); color: var(--warning); }
+.badge-error   { background: var(--error-bg); color: var(--error); }
+.badge-neutral { background: var(--surface-2); color: var(--text-secondary); }
+
+/* ============================================================
+   8. LOADING STATES
+   ============================================================ */
+
+/* Full-page spinner */
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: var(--space-md);
+}
+
+/* Spinner ring */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.spinner-sm { width: 20px; height: 20px; border-width: 2px; }
+
+/* Skeleton loader — grey pulse for content loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================
+   9. GRID LAYOUTS
+   ============================================================ */
+.grid-restaurants {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+
+.grid-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* ============================================================
+   10. STATUS BADGE COLORS (for order status)
+   ============================================================ */
+.status-PENDING         { background: #FEF3C7; color: #92400E; }
+.status-CONFIRMED       { background: #DBEAFE; color: #1E40AF; }
+.status-PREPARING       { background: #FEE2E2; color: #991B1B; }
+.status-OUT_FOR_DELIVERY{ background: #FFF7ED; color: #C2410C; }
+.status-DELIVERED       { background: #DCFCE7; color: #166534; }
+.status-CANCELLED       { background: #F3F4F6; color: #6B7280; }
+
+/* ============================================================
+   11. KEYFRAME ANIMATIONS
+   ============================================================ */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.04); }
+}
+
+.animate-fade-in    { animation: fadeIn 0.35s ease forwards; }
+.animate-slide-in   { animation: slideInRight 0.35s ease forwards; }
+
+/* ============================================================
+   12. RESPONSIVE BREAKPOINTS
+   ============================================================ */
+@media (max-width: 768px) {
+  .container { padding: 0 var(--space-md); }
+  .grid-restaurants { grid-template-columns: 1fr; }
+  .grid-menu { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   13. EMPTY STATE
+   ============================================================ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3xl) var(--space-lg);
+  text-align: center;
+  gap: var(--space-md);
+  color: var(--text-secondary);
+}
+.empty-state-icon {
+  font-size: 3.5rem;
+  line-height: 1;
+  opacity: 0.5;
+}
+.empty-state h3 {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  color: var(--text-primary);
+}
+
+.modal-scroll-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.modal-scroll-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
