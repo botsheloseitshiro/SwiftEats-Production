@@ -79,6 +79,10 @@ Add these environment variables in Render:
 - `DB_DRIVER=org.postgresql.Driver`
 - `HIBERNATE_DIALECT=org.hibernate.dialect.PostgreSQLDialect`
 - `CORS_ALLOWED_ORIGINS=https://<your-vercel-domain>`
+
+If you want both local development and production frontend access, use a comma-separated value:
+
+- `CORS_ALLOWED_ORIGINS=http://localhost:3000,https://<your-vercel-domain>`
 - `FRONTEND_RESET_PASSWORD_URL=https://<your-vercel-domain>/reset-password`
 - `RESET_PASSWORD_EXPOSE_LINK=true`
 
@@ -145,6 +149,10 @@ Once Vercel gives you the real frontend URL:
 2. Update:
 
 - `CORS_ALLOWED_ORIGINS=https://<your-vercel-domain>`
+
+You can also keep local access at the same time:
+
+- `CORS_ALLOWED_ORIGINS=http://localhost:3000,https://<your-vercel-domain>`
 - `FRONTEND_RESET_PASSWORD_URL=https://<your-vercel-domain>/reset-password`
 
 3. Redeploy backend
