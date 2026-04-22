@@ -20,8 +20,9 @@ class AuthServiceTest {
         com.swifteats.swifteats.config.JwtTokenProvider jwtTokenProvider = mock(com.swifteats.swifteats.config.JwtTokenProvider.class);
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
+        NotificationService notificationService = mock(NotificationService.class);
 
-        AuthService service = new AuthService(userRepository, passwordEncoder, authenticationManager, jwtTokenProvider, refreshTokenService, auditLogService);
+        AuthService service = new AuthService(userRepository, passwordEncoder, authenticationManager, jwtTokenProvider, refreshTokenService, auditLogService, notificationService);
 
         RefreshTokenRequest request = new RefreshTokenRequest();
         request.setRefreshToken("refresh-token");

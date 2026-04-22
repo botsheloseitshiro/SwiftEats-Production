@@ -1,7 +1,8 @@
 import React from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Clock3, MapPin, Star, Truck } from 'lucide-react';
+import { Clock3, Heart, MapPin, Star, Truck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useFavorites } from '../context/FavoritesContext';
 
 const MENU_ITEM_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=400&q=80';
 const RESTAURANT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600';
@@ -23,6 +24,11 @@ export function ProtectedRoute({ children, allowedRoles = [] }) {
 
 export function RestaurantCard({ restaurant }) {
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+  const { isFavorite, isFavoritePending, toggleFavorite } = useFavorites();
+  const canFavorite = isAuthenticated && user?.role === 'CUSTOMER';
+  const favoriteActive = canFavorite && isFavorite(restaurant.id);
+  const favoritePending = canFavorite && isFavoritePending(restaurant.id);
   const fee = restaurant.deliveryFee === 0
     ? 'Free delivery'
     : `R${restaurant.deliveryFee?.toFixed(0)} delivery`;
@@ -40,8 +46,27 @@ export function RestaurantCard({ restaurant }) {
           }}
         />
         <span style={cardStyles.categoryBadge}>{restaurant.category}</span>
+        {canFavorite && (
+          <button
+            type="button"
+            aria-label={favoriteActive ? 'Remove from favorites' : 'Save to favorites'}
+            title={favoriteActive ? 'Remove from favorites' : 'Save to favorites'}
+            disabled={favoritePending}
+            style={{
+              ...cardStyles.favoriteButton,
+              ...(favoriteActive ? cardStyles.favoriteButtonActive : {}),
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleFavorite(restaurant).catch(() => {});
+            }}
+          >
+            <Heart size={16} style={favoriteActive ? { fill: 'currentColor' } : undefined} />
+          </button>
+        )}
         <span style={{
           ...cardStyles.statusBadge,
+          ...(canFavorite ? cardStyles.statusBadgeWithFavorite : {}),
           background: restaurant.openNow ? 'rgba(21,128,61,0.92)' : 'rgba(153,27,27,0.92)',
         }}>
           {restaurant.openNow ? 'Open' : 'Closed'}
@@ -120,6 +145,31 @@ const cardStyles = {
     borderRadius: '999px',
     fontSize: '0.75rem',
     fontWeight: 700,
+  },
+  statusBadgeWithFavorite: {
+    right: '56px',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: '10px',
+    right: '12px',
+    width: '36px',
+    height: '36px',
+    borderRadius: '999px',
+    border: '1px solid rgba(255,255,255,0.32)',
+    background: 'rgba(255,255,255,0.92)',
+    color: 'var(--text-primary)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backdropFilter: 'blur(6px)',
+    boxShadow: 'var(--shadow-sm)',
+    zIndex: 1,
+  },
+  favoriteButtonActive: {
+    background: 'var(--primary)',
+    color: 'white',
+    border: '1px solid rgba(255,255,255,0.22)',
   },
   body: { padding: '16px' },
   name: {

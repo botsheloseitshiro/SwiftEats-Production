@@ -25,6 +25,10 @@ public class Driver {
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "restaurant_id")
+    private Restaurant restaurant;
+
     @Column(name = "vehicle_type", length = 50)
     private String vehicleType;
 
@@ -35,9 +39,32 @@ public class Driver {
     @Builder.Default
     private boolean available = true;
 
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
+    @Column(name = "is_online", nullable = false)
+    @Builder.Default
+    private boolean online = false;
+
     @Column(name = "total_deliveries")
     @Builder.Default
     private Integer totalDeliveries = 0;
+
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
+    @Column(name = "last_location_updated_at")
+    private LocalDateTime lastLocationUpdatedAt;
+
+    @Column(name = "current_shift_started_at")
+    private LocalDateTime currentShiftStartedAt;
+
+    @Column(name = "last_shift_ended_at")
+    private LocalDateTime lastShiftEndedAt;
 
     @OneToMany(mappedBy = "driver", fetch = FetchType.LAZY)
     @Builder.Default

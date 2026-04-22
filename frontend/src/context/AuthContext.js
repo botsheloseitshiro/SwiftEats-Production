@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import authService from '../services/auth.service';
 import { clearSession, clearSessionExpiredFlag, persistSession } from '../services/api';
+import notificationService from '../services/notification.service';
 
 const TOKEN_KEY = 'swifteats_token';
 const REFRESH_TOKEN_KEY = 'swifteats_refresh_token';
@@ -11,6 +12,9 @@ const AuthContext = createContext(undefined);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem(USER_KEY)));
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationsLoadedAt, setNotificationsLoadedAt] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const saveAuthData = useCallback((data) => {
@@ -23,6 +27,9 @@ export function AuthProvider({ children }) {
 
     setToken(data.token);
     setUser(userData);
+    setNotifications(data.unreadNotifications || []);
+    setUnreadNotificationCount(data.unreadNotificationCount || 0);
+    setNotificationsLoadedAt(Date.now());
     persistSession(data);
   }, []);
 
@@ -60,9 +67,30 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null);
       setToken(null);
+      setNotifications([]);
+      setUnreadNotificationCount(0);
+      setNotificationsLoadedAt(0);
       clearSession();
       clearSessionExpiredFlag();
     }
+  }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    if (!localStorage.getItem(TOKEN_KEY)) {
+      return { count: 0, items: [] };
+    }
+    const data = await notificationService.getUnreadNotifications();
+    setNotifications(data.items || []);
+    setUnreadNotificationCount(data.count || 0);
+    setNotificationsLoadedAt(Date.now());
+    return data;
+  }, []);
+
+  const markNotificationRead = useCallback(async (notificationId) => {
+    const updated = await notificationService.markAsRead(notificationId);
+    setNotifications((current) => current.filter((item) => item.id !== notificationId));
+    setUnreadNotificationCount((current) => Math.max(0, current - 1));
+    return updated;
   }, []);
 
   const isAuthenticated = !!token && !!user;
@@ -85,6 +113,11 @@ export function AuthProvider({ children }) {
     isAdmin,
     isRestaurantAdmin,
     isDriver,
+    notifications,
+    unreadNotificationCount,
+    notificationsLoadedAt,
+    refreshNotifications,
+    markNotificationRead,
     hasAnyRole,
     login,
     register,

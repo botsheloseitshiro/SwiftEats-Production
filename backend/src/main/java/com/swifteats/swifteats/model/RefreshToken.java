@@ -9,7 +9,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "refresh_tokens", indexes = {
         @Index(name = "idx_refresh_token_hash", columnList = "token_hash", unique = true),
-        @Index(name = "idx_refresh_token_expires_at", columnList = "expires_at")
+        @Index(name = "idx_refresh_token_expires_at", columnList = "expires_at"),
+        @Index(name = "idx_refresh_token_user", columnList = "user_id")
 })
 @Getter
 @Setter

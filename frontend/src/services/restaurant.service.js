@@ -1,9 +1,14 @@
 import api from './api';
 
 const restaurantService = {
-  getNearby: async (lat, lon, radiusKm = 10) => {
+  getNearby: async (lat, lon, radiusKm = 10, filters = {}) => {
     const response = await api.get('/restaurants/nearby', {
-      params: { lat, lon, radiusKm },
+      params: {
+        lat,
+        lon,
+        radiusKm,
+        ...filters,
+      },
     });
     return response.data;
   },
@@ -75,59 +80,23 @@ const restaurantService = {
     const response = await api.put(`/restaurants/${restaurantId}/active`, { active });
     return response.data;
   },
+
+  updateOperations: async (restaurantId, payload) => {
+    const response = await api.put(`/restaurants/${restaurantId}/operations`, payload);
+    return response.data;
+  },
+
+  getRestaurantAdminAnalytics: async (restaurantId) => {
+    const response = await api.get('/restaurants/restaurant-admin/analytics', {
+      params: restaurantId ? { restaurantId } : {},
+    });
+    return response.data;
+  },
+
+  assignManager: async (restaurantId, adminUserId) => {
+    const response = await api.put(`/restaurants/${restaurantId}/manager`, { adminUserId });
+    return response.data;
+  },
 };
 
 export default restaurantService;
-
-export const menuService = {
-  getByRestaurant: async (restaurantId, params = {}) => {
-    const response = await api.get(`/menu/restaurant/${restaurantId}`, { params });
-    return response.data;
-  },
-
-  getById: async (id) => {
-    const response = await api.get(`/menu/${id}`);
-    return response.data;
-  },
-
-  create: async (data) => {
-    const response = await api.post('/menu', data);
-    return response.data;
-  },
-
-  update: async (id, data) => {
-    const response = await api.put(`/menu/${id}`, data);
-    return response.data;
-  },
-
-  delete: async (id) => {
-    await api.delete(`/menu/${id}`);
-  },
-};
-
-export const orderService = {
-  placeOrder: async (orderData) => {
-    const response = await api.post('/orders', orderData);
-    return response.data;
-  },
-
-  getMyOrders: async () => {
-    const response = await api.get('/orders/my-orders');
-    return response.data;
-  },
-
-  getById: async (id) => {
-    const response = await api.get(`/orders/${id}`);
-    return response.data;
-  },
-
-  getAll: async () => {
-    const response = await api.get('/orders');
-    return response.data;
-  },
-
-  updateStatus: async (id, status) => {
-    const response = await api.put(`/orders/${id}/status`, { status });
-    return response.data;
-  },
-};

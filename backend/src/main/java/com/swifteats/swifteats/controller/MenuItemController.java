@@ -58,4 +58,10 @@ public class MenuItemController {
         menuItemService.deleteMenuItem(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PutMapping("/{id}/stock")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RESTAURANT_ADMIN')")
+    public ResponseEntity<MenuItemDTO> updateStockStatus(@PathVariable Long id, @RequestBody java.util.Map<String, Boolean> request) {
+        return ResponseEntity.ok(menuItemService.updateStockStatus(id, request.getOrDefault("available", true)));
+    }
 }

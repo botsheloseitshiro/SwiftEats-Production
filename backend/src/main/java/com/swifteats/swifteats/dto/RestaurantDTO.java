@@ -7,12 +7,16 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.LocalDateTime;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class RestaurantDTO {
+    private static final ZoneId RESTAURANT_ZONE = ZoneId.of("Africa/Johannesburg");
 
     /** Present in responses (from DB), absent in create requests */
     private Long id;
@@ -46,6 +50,10 @@ public class RestaurantDTO {
 
     @Builder.Default
     private boolean active = true;
+    @Builder.Default
+    private boolean acceptingOrders = true;
+    private LocalDateTime pauseOrdersUntil;
+    private String holidayHours;
 
     private boolean openNow;
     private String mondayHours;
@@ -59,6 +67,7 @@ public class RestaurantDTO {
 
     // --- Utility method: Entity → DTO ---
     public static RestaurantDTO fromEntity(com.swifteats.swifteats.model.Restaurant restaurant) {
+        ZonedDateTime now = ZonedDateTime.now(RESTAURANT_ZONE);
         return RestaurantDTO.builder()
                 .id(restaurant.getId())
                 .name(restaurant.getName())
@@ -77,6 +86,10 @@ public class RestaurantDTO {
                 .rating(restaurant.getRating())
                 .reviewCount(0L)
                 .active(restaurant.isActive())
+                .acceptingOrders(restaurant.isAcceptingOrders())
+                .pauseOrdersUntil(restaurant.getPauseOrdersUntil())
+                .holidayHours(restaurant.getHolidayHours())
+                .openNow(restaurant.isActive() && restaurant.isWithinTradingHours(now.getDayOfWeek(), now.toLocalTime()))
                 .mondayHours(restaurant.getMondayHours())
                 .tuesdayHours(restaurant.getTuesdayHours())
                 .wednesdayHours(restaurant.getWednesdayHours())

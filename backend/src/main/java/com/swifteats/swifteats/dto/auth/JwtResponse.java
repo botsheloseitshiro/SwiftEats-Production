@@ -1,9 +1,12 @@
 package com.swifteats.swifteats.dto.auth;
 
+import com.swifteats.swifteats.dto.notification.NotificationDTO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.List;
 
 @Data
 @Builder
@@ -21,4 +24,6 @@ public class JwtResponse {
     private String fullName;
     private String email;
     private String role;
+    private Long unreadNotificationCount;
+    private List<NotificationDTO> unreadNotifications;
 }

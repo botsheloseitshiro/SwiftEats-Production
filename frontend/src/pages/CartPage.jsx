@@ -37,6 +37,9 @@ export default function CartPage() {
   const [paymentMethod, setPaymentMethod] = useState('CARD');
   const [tipAmount, setTipAmount] = useState(0);
   const [saveCard, setSaveCard] = useState(false);
+  const [timingMode, setTimingMode] = useState('ASAP');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
   const [cardForm, setCardForm] = useState({
     cardHolderName: '',
     cardNumber: '',
@@ -133,6 +136,12 @@ export default function CartPage() {
   const selectedSubtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const deliveryFee = fulfillmentType === 'DELIVERY' ? (selectedGroup?.deliveryFee || 0) : 0;
   const selectedTotal = selectedSubtotal + deliveryFee + tipAmount;
+  const scheduledFor = useMemo(() => {
+    if (timingMode !== 'SCHEDULED' || !scheduledDate || !scheduledTime) {
+      return null;
+    }
+    return `${scheduledDate}T${scheduledTime}:00`;
+  }, [scheduledDate, scheduledTime, timingMode]);
 
   const toggleSelected = (restaurantId, itemId) => {
     const key = `${restaurantId}:${itemId}`;
@@ -179,7 +188,21 @@ export default function CartPage() {
       return;
     }
 
-    if (selectedRestaurantStatus && !selectedRestaurantStatus.openNow) {
+    if (timingMode === 'SCHEDULED' && (!scheduledDate || !scheduledTime)) {
+      setError('Please choose the delivery or collection date and time.');
+      return;
+    }
+
+    if (timingMode === 'SCHEDULED' && scheduledFor) {
+      const scheduledDateTime = new Date(scheduledFor);
+      const minimumDateTime = new Date(Date.now() + 15 * 60 * 1000);
+      if (Number.isNaN(scheduledDateTime.getTime()) || scheduledDateTime < minimumDateTime) {
+        setError('Scheduled orders must be at least 15 minutes in the future.');
+        return;
+      }
+    }
+
+    if (selectedRestaurantStatus && !selectedRestaurantStatus.openNow && timingMode !== 'SCHEDULED') {
       setError('This restaurant is closed and the order cannot be processed right now.');
       return;
     }
@@ -203,6 +226,7 @@ export default function CartPage() {
         deliveryAddress: fulfillmentType === 'DELIVERY' ? deliveryAddress.trim() : null,
         notes: notes.trim() || null,
         tipAmount: fulfillmentType === 'DELIVERY' ? tipAmount : 0,
+        scheduledFor,
         savedCardId: selectedCardId ? Number(selectedCardId) : null,
         saveCard: paymentMethod === 'CARD' && !selectedCardId ? saveCard : false,
         card: paymentMethod === 'CARD' && !selectedCardId ? {
@@ -221,6 +245,9 @@ export default function CartPage() {
       setSelectedKeys((current) => current.filter((key) => !key.startsWith(`${selectedRestaurantId}:`)));
       setNotes('');
       setTipAmount(0);
+      setTimingMode('ASAP');
+      setScheduledDate('');
+      setScheduledTime('');
       setSaveCard(false);
       setSelectedCardId('');
       setCardForm((current) => ({ ...current, cardNumber: '', expiryMonth: '', expiryYear: '' }));
@@ -342,7 +369,7 @@ export default function CartPage() {
             <div style={sectionCard}>
               <h2 style={sectionTitle}>Checkout Preferences</h2>
               {selectedRestaurantStatus && !selectedRestaurantStatus.openNow && (
-                <div style={errorAlert}>This restaurant is closed. Order can&apos;t be processed until it opens again.</div>
+                <div style={errorAlert}>This restaurant is closed right now. Choose a scheduled order time to place the order for later.</div>
               )}
               <div style={optionGrid}>
                 <button
@@ -427,6 +454,60 @@ export default function CartPage() {
                     </div>
                   </div>
                 </>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Order Timing</label>
+                <div style={optionGrid}>
+                  <button
+                    type="button"
+                    style={{ ...optionCard, ...(timingMode === 'ASAP' ? optionCardActive : {}) }}
+                    onClick={() => setTimingMode('ASAP')}
+                  >
+                    <ArrowRight size={18} />
+                    <div>
+                      <strong>As soon as possible</strong>
+                      <div style={smallText}>Send the order to the restaurant now</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...optionCard, ...(timingMode === 'SCHEDULED' ? optionCardActive : {}) }}
+                    onClick={() => setTimingMode('SCHEDULED')}
+                  >
+                    <CreditCard size={18} />
+                    <div>
+                      <strong>Schedule for later</strong>
+                      <div style={smallText}>Pick a date and time for the order</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {timingMode === 'SCHEDULED' && (
+                <div style={paymentPanel}>
+                  <div style={formRow}>
+                    <div className="form-group">
+                      <label className="form-label">Scheduled Date *</label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={scheduledDate}
+                        onChange={(event) => setScheduledDate(event.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Scheduled Time *</label>
+                      <input
+                        className="form-input"
+                        type="time"
+                        value={scheduledTime}
+                        onChange={(event) => setScheduledTime(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
               )}
 
               <div className="form-group">
@@ -579,6 +660,10 @@ export default function CartPage() {
                       <span>{paymentMethod === 'CARD' ? 'Card' : 'Cash on delivery'}</span>
                     </div>
                     <div style={summaryRow}>
+                      <span>Timing</span>
+                      <span>{timingMode === 'SCHEDULED' && scheduledFor ? new Date(scheduledFor).toLocaleString() : 'As soon as possible'}</span>
+                    </div>
+                    <div style={summaryRow}>
                       <span>Items selected</span>
                       <span>{selectedItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
                     </div>
@@ -611,7 +696,7 @@ export default function CartPage() {
               <button
                 className="btn btn-primary btn-full btn-lg"
                 onClick={handlePlaceOrder}
-                disabled={placing || selectedItems.length === 0 || selectedRestaurantIds.length !== 1 || (selectedRestaurantStatus && !selectedRestaurantStatus.openNow)}
+                disabled={placing || selectedItems.length === 0 || selectedRestaurantIds.length !== 1 || (selectedRestaurantStatus && !selectedRestaurantStatus.openNow && timingMode !== 'SCHEDULED')}
                 style={{ marginTop: '16px' }}
               >
                 {placing ? 'Processing payment...' : <>Proceed to Payment <ArrowRight size={18} /></>}

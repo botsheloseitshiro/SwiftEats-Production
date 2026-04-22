@@ -69,6 +69,11 @@ public class Order {
     private Driver driver;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "driver_assignment_status", nullable = false, length = 30)
+    @Builder.Default
+    private DriverAssignmentStatus driverAssignmentStatus = DriverAssignmentStatus.UNASSIGNED;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "fulfillment_type", nullable = false, length = 20)
     @Builder.Default
     private FulfillmentType fulfillmentType = FulfillmentType.DELIVERY;
@@ -88,6 +93,20 @@ public class Order {
     @Column(name = "archived_by_customer", nullable = false)
     @Builder.Default
     private boolean archivedByCustomer = false;
+
+    @Column(name = "scheduled_for")
+    private LocalDateTime scheduledFor;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_status", nullable = false, length = 30)
+    @Builder.Default
+    private RefundStatus refundStatus = RefundStatus.NOT_APPLICABLE;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

@@ -2,6 +2,7 @@ package com.swifteats.swifteats.dto.order;
 
 import com.swifteats.swifteats.model.Order;
 import com.swifteats.swifteats.model.OrderItem;
+import com.swifteats.swifteats.model.RefundStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -37,10 +38,14 @@ public class OrderResponse {
     private List<OrderItemResponse> items;
 
     /** Driver name if one has been assigned, otherwise null */
+    private Long driverId;
     private String driverName;
     private String driverVehicleType;
     private String driverLicensePlate;
     private boolean driverDetailsVisible;
+    private String driverAssignmentStatus;
+    private LocalDateTime scheduledFor;
+    private RefundStatus refundStatus;
 
     /**
      * Inner DTO for each line item in the order response.
@@ -95,6 +100,7 @@ public class OrderResponse {
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())
                 .items(itemResponses)
+                .driverId(order.getDriver() != null ? order.getDriver().getId() : null)
                 .driverName(showDriverDetails && order.getDriver() != null
                         ? order.getDriver().getUser().getFullName()
                         : null)
@@ -105,6 +111,9 @@ public class OrderResponse {
                         ? order.getDriver().getLicensePlate()
                         : null)
                 .driverDetailsVisible(showDriverDetails)
+                .driverAssignmentStatus(order.getDriverAssignmentStatus() != null ? order.getDriverAssignmentStatus().name() : null)
+                .scheduledFor(order.getScheduledFor())
+                .refundStatus(order.getRefundStatus())
                 .build();
     }
 }

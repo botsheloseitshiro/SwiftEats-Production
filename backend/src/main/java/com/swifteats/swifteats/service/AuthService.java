@@ -19,6 +19,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -30,6 +32,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Transactional
     public JwtResponse register(RegisterRequest request) {
@@ -94,6 +97,13 @@ public class AuthService {
     }
 
     private JwtResponse buildAuthResponse(User user, String accessToken) {
+        NotificationService.UnreadNotificationSnapshot unreadSnapshot;
+        try {
+            unreadSnapshot = notificationService.getUnreadSnapshotForUser(user);
+        } catch (RuntimeException ex) {
+            log.warn("Skipping unread notification payload during login for {}: {}", user.getEmail(), ex.getMessage());
+            unreadSnapshot = new NotificationService.UnreadNotificationSnapshot(0, List.of());
+        }
         String refreshToken = refreshTokenService.createRefreshToken(user);
         return JwtResponse.builder()
                 .token(accessToken)
@@ -104,6 +114,8 @@ public class AuthService {
                 .fullName(user.getFullName())
                 .email(user.getEmail())
                 .role(user.getRole().name())
+                .unreadNotificationCount(unreadSnapshot.count())
+                .unreadNotifications(unreadSnapshot.items())
                 .build();
     }
 

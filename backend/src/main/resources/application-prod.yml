@@ -57,9 +57,15 @@ management:
     health:
       show-details: when-authorized
 
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
+
 app:
   reset-password:
-    expose-link: ${RESET_PASSWORD_EXPOSE_LINK:true}
+    expose-link: ${RESET_PASSWORD_EXPOSE_LINK:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   seeder:

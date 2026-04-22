@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -22,6 +23,7 @@ public class OrderRequest {
     private String deliveryAddress;
     private String notes;
     private BigDecimal tipAmount;
+    private LocalDateTime scheduledFor;
     private boolean saveCard;
     private Long savedCardId;
     private PaymentCardRequest card;

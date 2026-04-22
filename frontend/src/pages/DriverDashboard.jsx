@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Clock, MapPin, Power } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import driverService from '../services/driver.service';
 import orderService from '../services/order.service';
 import PaginationControls from '../components/PaginationControls';
 import SortSelect from '../components/SortSelect';
@@ -18,8 +19,25 @@ export default function DriverDashboard() {
   const [sort, setSort] = useState('createdAt,desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [expandedOrderId, setExpandedOrderId] = useState(null);
-  const [updatingOrderId, setUpdatingOrderId] = useState(null);
+  const [driverState, setDriverState] = useState({
+    online: false,
+    available: false,
+  });
+  const [savingShift, setSavingShift] = useState(false);
+  const [sharingLocation, setSharingLocation] = useState(false);
+  const [respondingOrderId, setRespondingOrderId] = useState(null);
+
+  const loadDriverState = useCallback(async () => {
+    try {
+      const profile = await driverService.getMyDriverProfile();
+      setDriverState({
+        online: Boolean(profile.online),
+        available: Boolean(profile.available),
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load driver status.');
+    }
+  }, []);
 
   const loadOrders = useCallback(async (page = 0, nextSort = sort) => {
     try {
@@ -39,68 +57,171 @@ export default function DriverDashboard() {
   }, [pageState.size, sort]);
 
   useEffect(() => {
+    loadDriverState();
+  }, [loadDriverState]);
+
+  useEffect(() => {
     loadOrders(0, sort);
   }, [loadOrders, sort]);
 
-  const getNextStatus = (currentStatus) => ({
-    PENDING: 'CONFIRMED',
-    CONFIRMED: 'PREPARING',
-    PREPARING: 'OUT_FOR_DELIVERY',
-    OUT_FOR_DELIVERY: 'DELIVERED',
-    DELIVERED: null,
-    CANCELLED: null,
-  }[currentStatus]);
+  const pendingAssignments = useMemo(
+    () => pageState.content.filter((order) => order.driverAssignmentStatus === 'PENDING_DRIVER_RESPONSE'),
+    [pageState.content]
+  );
 
-  const getStatusColor = (status) => ({
-    PENDING: { bg: '#fef3c7', text: '#92400e' },
-    CONFIRMED: { bg: '#e0f2fe', text: '#0c4a6e' },
-    PREPARING: { bg: '#fce7f3', text: '#831843' },
-    OUT_FOR_DELIVERY: { bg: '#d1fae5', text: '#065f46' },
-    DELIVERED: { bg: '#d1fae5', text: '#065f46' },
-    CANCELLED: { bg: '#fee2e2', text: '#991b1b' },
-  }[status] || { bg: '#f3f4f6', text: '#374151' });
+  const activeOrders = useMemo(
+    () => pageState.content.filter((order) => !['DELIVERED', 'CANCELLED'].includes(order.status)),
+    [pageState.content]
+  );
 
-  const handleStatusChange = async (orderId, newStatus) => {
-    setUpdatingOrderId(orderId);
+  const handleShiftToggle = async () => {
     try {
-      await orderService.updateOrderStatus(orderId, newStatus);
+      setSavingShift(true);
+      const next = await driverService.updateMyShift(!driverState.online);
+      setDriverState((current) => ({ ...current, online: next.online, available: next.available }));
+      await loadOrders(pageState.currentPage, sort);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update shift status.');
+    } finally {
+      setSavingShift(false);
+    }
+  };
+
+  const handleAvailabilityToggle = async () => {
+    try {
+      setSavingShift(true);
+      const next = await driverService.updateMyAvailability(!driverState.available);
+      setDriverState((current) => ({ ...current, online: next.online, available: next.available }));
+      await loadOrders(pageState.currentPage, sort);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update availability.');
+    } finally {
+      setSavingShift(false);
+    }
+  };
+
+  const handleShareLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported on this device/browser.');
+      return;
+    }
+
+    setSharingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          await driverService.updateMyLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        } catch (err) {
+          setError(err.response?.data?.message || 'Failed to share your current location.');
+        } finally {
+          setSharingLocation(false);
+        }
+      },
+      (geoError) => {
+        setError(geoError.message || 'Location permission was denied.');
+        setSharingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15000,
+      }
+    );
+  };
+
+  const handleAssignmentResponse = async (orderId, accept) => {
+    try {
+      setRespondingOrderId(orderId);
+      await driverService.respondToAssignment(orderId, accept);
+      await loadOrders(pageState.currentPage, sort);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update driver response.');
+    } finally {
+      setRespondingOrderId(null);
+    }
+  };
+
+  const handleStatusChange = async (orderId, status) => {
+    try {
+      setRespondingOrderId(orderId);
+      await orderService.updateOrderStatus(orderId, status);
       await loadOrders(pageState.currentPage, sort);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to update order status.');
     } finally {
-      setUpdatingOrderId(null);
+      setRespondingOrderId(null);
     }
   };
 
-  const activeCount = useMemo(
-    () => pageState.content.filter((order) => !['DELIVERED', 'CANCELLED'].includes(order.status)).length,
-    [pageState.content]
-  );
-  const completedCount = useMemo(
-    () => pageState.content.filter((order) => ['DELIVERED', 'CANCELLED'].includes(order.status)).length,
-    [pageState.content]
-  );
+  const getNextStatus = (status) => ({
+    CONFIRMED: 'PREPARING',
+    PREPARING: 'OUT_FOR_DELIVERY',
+    OUT_FOR_DELIVERY: 'DELIVERED',
+  }[status] || null);
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Driver Dashboard</h1>
-        <p style={styles.subtitle}>Welcome, {user?.fullName}. Manage your deliveries.</p>
+        <div>
+          <h1 style={styles.title}>Driver Dashboard</h1>
+          <p style={styles.subtitle}>Welcome, {user?.fullName}. Manage your shift and deliveries.</p>
+        </div>
+        <div style={styles.headerActions}>
+          <button
+            type="button"
+            onClick={handleAvailabilityToggle}
+            disabled={savingShift || !driverState.online}
+            style={{
+              ...styles.shiftButton,
+              background: driverState.available ? '#dcfce7' : '#fef3c7',
+              color: driverState.available ? '#166534' : '#92400e',
+              opacity: !driverState.online ? 0.65 : 1,
+            }}
+          >
+            {savingShift ? 'Saving...' : driverState.available ? 'Unavailable' : 'Available'}
+          </button>
+          <button
+            type="button"
+            onClick={handleShiftToggle}
+            disabled={savingShift}
+            style={{
+              ...styles.shiftButton,
+              background: driverState.online ? '#dcfce7' : '#fee2e2',
+              color: driverState.online ? '#166534' : '#991b1b',
+            }}
+          >
+            <Power size={16} />
+            {savingShift ? 'Saving...' : driverState.online ? 'Go Offline' : 'Go Online'}
+          </button>
+        </div>
       </div>
 
-      <div style={styles.topBar}>
-        <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <div style={styles.statNumber}>{activeCount}</div>
-            <div style={styles.statLabel}>Visible Active Orders</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statNumber}>{completedCount}</div>
-            <div style={styles.statLabel}>Visible Completed Orders</div>
-          </div>
+      <div style={styles.statsGrid}>
+        <div style={styles.statCard}>
+          <span style={styles.statLabel}>Pending Assignments</span>
+          <strong style={styles.statValue}>{pendingAssignments.length}</strong>
         </div>
-        <div style={styles.ordersToolbar}>
-          <h2 style={styles.ordersHeading}>Assigned Orders</h2>
+        <div style={styles.statCard}>
+          <span style={styles.statLabel}>Active Orders</span>
+          <strong style={styles.statValue}>{activeOrders.length}</strong>
+        </div>
+      </div>
+
+      <div style={styles.toolbar}>
+        <div style={styles.locationPanel}>
+          <div style={styles.locationHeading}>
+            <MapPin size={16} />
+            Share Current Location
+          </div>
+          <button type="button" style={styles.secondaryButton} onClick={handleShareLocation} disabled={sharingLocation}>
+            {sharingLocation ? 'Sharing...' : 'Share Location'}
+          </button>
+        </div>
+
+        <div style={styles.locationPanel}>
           <SortSelect
             label="Sort Orders"
             value={sort}
@@ -118,107 +239,76 @@ export default function DriverDashboard() {
 
       {!loading && error && (
         <ErrorState
-          title="Orders could not be loaded"
+          title="Driver dashboard could not be loaded"
           message={error}
-          onRetry={() => loadOrders(pageState.currentPage, sort)}
+          onRetry={() => {
+            loadOrders(pageState.currentPage, sort);
+          }}
         />
       )}
 
       {!loading && !error && pageState.content.length === 0 && (
         <EmptyState
           title="No assigned orders"
-          message="Assigned deliveries will appear here when dispatch starts routing orders to you."
+          message="Assignments will show up here when dispatch routes deliveries to you."
         />
       )}
 
       {!loading && !error && pageState.content.length > 0 && (
         <>
-          <div style={styles.ordersList}>
-            {pageState.content.map((order) => (
-              <div key={order.id} style={styles.orderCard}>
-                <div
-                  style={styles.orderHeader}
-                  onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
-                >
-                  <div style={styles.orderInfo}>
-                    <h3 style={styles.orderTitle}>Order #{order.id} from {order.restaurantName}</h3>
-                    <p style={styles.orderTime}>
-                      <Clock size={14} style={{ marginRight: '4px' }} />
-                      {new Date(order.createdAt).toLocaleString()}
-                    </p>
+          <div style={styles.orderList}>
+            {pageState.content.map((order) => {
+              const nextStatus = getNextStatus(order.status);
+              return (
+                <div key={order.id} style={styles.orderCard}>
+                  <div style={styles.orderTop}>
+                    <div>
+                      <h3 style={styles.orderTitle}>Order #{order.id}</h3>
+                      <p style={styles.orderMeta}>
+                        {order.restaurantName} . <Clock size={14} style={{ transform: 'translateY(2px)' }} />{' '}
+                        {new Date(order.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <span style={styles.statusBadge}>{order.status.replaceAll('_', ' ')}</span>
                   </div>
 
-                  <div style={styles.rightContent}>
-                    <span
-                      style={{
-                        ...styles.statusBadge,
-                        background: getStatusColor(order.status).bg,
-                        color: getStatusColor(order.status).text,
-                      }}
-                    >
-                      {order.status.replace('_', ' ')}
-                    </span>
-                    {expandedOrderId === order.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                  </div>
-                </div>
+                  <p style={styles.address}>{order.deliveryAddress || 'Collection order'}</p>
+                  <p style={styles.amount}>Total: R{Number(order.totalAmount || 0).toFixed(2)}</p>
 
-                {expandedOrderId === order.id && (
-                  <div style={styles.orderDetails}>
-                    <div style={styles.detailSection}>
-                      <h4 style={styles.detailLabel}>Delivery Address</h4>
-                      <p style={styles.detailValue}>{order.deliveryAddress}</p>
-                    </div>
-
-                    <div style={styles.detailSection}>
-                      <h4 style={styles.detailLabel}>Items</h4>
-                      {order.items?.map((item, index) => (
-                        <div key={`${order.id}-${index}`} style={styles.itemRow}>
-                          <div>
-                            <p style={styles.itemName}>{item.itemName}</p>
-                            <p style={styles.itemPrice}>R{item.unitPrice.toFixed(2)} x {item.quantity}</p>
-                          </div>
-                          <p style={styles.itemSubtotal}>R{item.subtotal.toFixed(2)}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {order.notes && (
-                      <div style={styles.detailSection}>
-                        <h4 style={styles.detailLabel}>Notes</h4>
-                        <p style={styles.detailValue}>{order.notes}</p>
-                      </div>
-                    )}
-
-                    <div style={{ ...styles.detailSection, borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-                      <div style={styles.totalRow}>
-                        <span>Delivery Fee:</span>
-                        <span>R{order.deliveryFee.toFixed(2)}</span>
-                      </div>
-                      <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: '1.125rem', color: 'var(--primary)' }}>
-                        <span>Total:</span>
-                        <span>R{order.totalAmount.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {getNextStatus(order.status) && (
+                  {order.driverAssignmentStatus === 'PENDING_DRIVER_RESPONSE' && (
+                    <div style={styles.actionRow}>
                       <button
-                        onClick={() => handleStatusChange(order.id, getNextStatus(order.status))}
-                        disabled={updatingOrderId === order.id}
-                        style={{
-                          ...styles.updateStatusBtn,
-                          opacity: updatingOrderId === order.id ? 0.6 : 1,
-                          cursor: updatingOrderId === order.id ? 'not-allowed' : 'pointer',
-                        }}
+                        type="button"
+                        style={styles.acceptButton}
+                        disabled={respondingOrderId === order.id}
+                        onClick={() => handleAssignmentResponse(order.id, true)}
                       >
-                        {updatingOrderId === order.id
-                          ? 'Updating...'
-                          : `Mark as ${getNextStatus(order.status).replace('_', ' ')}`}
+                        Accept
                       </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                      <button
+                        type="button"
+                        style={styles.rejectButton}
+                        disabled={respondingOrderId === order.id}
+                        onClick={() => handleAssignmentResponse(order.id, false)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {order.driverAssignmentStatus !== 'PENDING_DRIVER_RESPONSE' && nextStatus && (
+                    <button
+                      type="button"
+                      style={styles.primaryButton}
+                      disabled={respondingOrderId === order.id}
+                      onClick={() => handleStatusChange(order.id, nextStatus)}
+                    >
+                      {respondingOrderId === order.id ? 'Updating...' : `Mark as ${nextStatus.replaceAll('_', ' ')}`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <PaginationControls
@@ -242,168 +332,169 @@ const styles = {
   header: {
     maxWidth: '1200px',
     margin: '0 auto 24px auto',
-    textAlign: 'center',
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '16px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   title: {
+    margin: 0,
     fontSize: '2rem',
-    fontWeight: 800,
     color: 'var(--text-primary)',
-    margin: '0 0 8px 0',
   },
   subtitle: {
-    fontSize: '1rem',
+    margin: '8px 0 0 0',
     color: 'var(--text-secondary)',
   },
-  topBar: {
-    maxWidth: '1200px',
-    margin: '0 auto 24px auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    alignItems: 'stretch',
+  shiftButton: {
+    border: 'none',
+    borderRadius: '999px',
+    padding: '12px 18px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontWeight: 700,
+    cursor: 'pointer',
   },
   statsGrid: {
+    maxWidth: '1200px',
+    margin: '0 auto 24px auto',
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
     gap: '16px',
-    flex: 1,
   },
   statCard: {
-    background: 'var(--surface)',
+    background: 'white',
     border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '24px',
-    textAlign: 'center',
-  },
-  statNumber: {
-    fontSize: '2.5rem',
-    fontWeight: 800,
-    color: 'var(--primary)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '18px',
+    display: 'grid',
+    gap: '8px',
   },
   statLabel: {
-    fontSize: '0.875rem',
     color: 'var(--text-secondary)',
-    marginTop: '8px',
+    fontSize: '0.9rem',
   },
-  ordersToolbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    gap: '16px',
-    flexWrap: 'wrap',
-  },
-  ordersHeading: {
-    fontSize: '1.25rem',
-    fontWeight: 700,
-    margin: 0,
+  statValue: {
     color: 'var(--text-primary)',
+    fontSize: '1.5rem',
   },
-  ordersList: {
+  toolbar: {
     maxWidth: '1200px',
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
+    margin: '0 auto 24px auto',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '16px',
+  },
+  locationPanel: {
+    background: 'white',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '18px',
+    display: 'grid',
     gap: '12px',
   },
-  orderCard: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    overflow: 'hidden',
-    boxShadow: 'var(--shadow-sm)',
-  },
-  orderHeader: {
+  locationHeading: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '16px',
-    cursor: 'pointer',
-  },
-  orderInfo: {
-    flex: 1,
-  },
-  orderTitle: {
-    fontSize: '1rem',
-    fontWeight: 600,
+    gap: '8px',
+    fontWeight: 700,
     color: 'var(--text-primary)',
-    margin: '0 0 6px 0',
   },
-  orderTime: {
-    fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
-    margin: 0,
-    display: 'flex',
-    alignItems: 'center',
-  },
-  rightContent: {
-    display: 'flex',
-    alignItems: 'center',
+  orderList: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    display: 'grid',
     gap: '16px',
   },
+  orderCard: {
+    background: 'white',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '18px',
+    display: 'grid',
+    gap: '12px',
+  },
+  orderTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    alignItems: 'flex-start',
+  },
+  orderTitle: {
+    margin: 0,
+    color: 'var(--text-primary)',
+  },
+  orderMeta: {
+    margin: '6px 0 0 0',
+    color: 'var(--text-secondary)',
+    fontSize: '0.9rem',
+  },
   statusBadge: {
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    padding: '6px 12px',
     borderRadius: '999px',
+    background: 'var(--primary-glow)',
+    color: 'var(--primary)',
+    padding: '8px 12px',
+    fontSize: '0.8rem',
+    fontWeight: 700,
     whiteSpace: 'nowrap',
   },
-  orderDetails: {
-    padding: '16px',
-    borderTop: '1px solid var(--border)',
-    background: 'var(--surface-2)',
-  },
-  detailSection: {
-    marginBottom: '16px',
-  },
-  detailLabel: {
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: '0 0 8px 0',
-  },
-  detailValue: {
-    fontSize: '0.95rem',
+  address: {
+    margin: 0,
     color: 'var(--text-secondary)',
+  },
+  amount: {
     margin: 0,
-  },
-  itemRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: '8px 0',
-    borderBottom: '1px solid var(--border)',
-  },
-  itemName: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
+    fontWeight: 700,
     color: 'var(--text-primary)',
-    margin: 0,
   },
-  itemPrice: {
-    fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
-    margin: '2px 0 0 0',
-  },
-  itemSubtotal: {
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    color: 'var(--primary)',
-    margin: 0,
-  },
-  totalRow: {
+  actionRow: {
     display: 'flex',
-    justifyContent: 'space-between',
-    padding: '8px 0',
+    gap: '10px',
   },
-  updateStatusBtn: {
-    width: '100%',
-    padding: '12px',
-    marginTop: '16px',
-    background: 'var(--primary)',
-    color: 'white',
+  primaryButton: {
     border: 'none',
     borderRadius: 'var(--radius-md)',
-    fontWeight: 600,
+    padding: '12px 14px',
+    background: 'var(--primary)',
+    color: 'white',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '10px 14px',
+    background: 'white',
+    color: 'var(--text-primary)',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  acceptButton: {
+    flex: 1,
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    padding: '12px 14px',
+    background: '#dcfce7',
+    color: '#166534',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  rejectButton: {
+    flex: 1,
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    padding: '12px 14px',
+    background: '#fee2e2',
+    color: '#991b1b',
+    fontWeight: 700,
+    cursor: 'pointer',
   },
 };

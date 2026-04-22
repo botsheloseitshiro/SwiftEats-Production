@@ -1,6 +1,8 @@
 package com.swifteats.swifteats.service;
 
 import com.swifteats.swifteats.dto.RestaurantDTO;
+import com.swifteats.swifteats.dto.common.PaginatedResponse;
+import com.swifteats.swifteats.dto.user.AdminUserSummaryDTO;
 import com.swifteats.swifteats.dto.user.SavedAddressDTO;
 import com.swifteats.swifteats.dto.user.SavedAddressRequest;
 import com.swifteats.swifteats.dto.user.ChangePasswordRequest;
@@ -18,6 +20,8 @@ import com.swifteats.swifteats.repository.SavedCardRepository;
 import com.swifteats.swifteats.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -314,6 +318,27 @@ public class UserService {
         user.setActive(false);
         userRepository.save(user);
         auditLogService.log("USER_DEACTIVATED_BY_ADMIN", currentActor(), "User", String.valueOf(userId), java.util.Map.of());
+    }
+
+    @Transactional(readOnly = true)
+    public PaginatedResponse<AdminUserSummaryDTO> getUsersForAdmin(String search, String role, Boolean active, Pageable pageable) {
+        Specification<User> specification = (root, query, cb) -> cb.conjunction();
+        if (search != null && !search.isBlank()) {
+            String term = "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+            specification = specification.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("fullName")), term),
+                    cb.like(cb.lower(root.get("email")), term),
+                    cb.like(cb.lower(root.get("phoneNumber")), term)
+            ));
+        }
+        if (role != null && !role.isBlank()) {
+            specification = specification.and((root, query, cb) ->
+                    cb.equal(root.get("role"), com.swifteats.swifteats.model.Role.valueOf(role.toUpperCase(Locale.ROOT))));
+        }
+        if (active != null) {
+            specification = specification.and((root, query, cb) -> cb.equal(root.get("active"), active));
+        }
+        return PaginatedResponse.fromPage(userRepository.findAll(specification, pageable).map(AdminUserSummaryDTO::fromEntity));
     }
 
     private UserProfileDTO mapToProfileDTO(User user) {

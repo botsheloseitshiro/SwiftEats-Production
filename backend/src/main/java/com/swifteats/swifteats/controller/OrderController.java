@@ -3,6 +3,7 @@ package com.swifteats.swifteats.controller;
 import com.swifteats.swifteats.dto.common.PaginatedResponse;
 import com.swifteats.swifteats.dto.order.OrderRequest;
 import com.swifteats.swifteats.dto.order.OrderResponse;
+import com.swifteats.swifteats.dto.order.TipSuggestionDTO;
 import com.swifteats.swifteats.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,11 @@ public class OrderController {
         return ResponseEntity.ok(orderService.getOrderById(id, authentication.getName(), isAdmin));
     }
 
+    @GetMapping("/tips")
+    public ResponseEntity<TipSuggestionDTO> getTipSuggestions(@RequestParam java.math.BigDecimal subtotal) {
+        return ResponseEntity.ok(orderService.getTipSuggestions(subtotal));
+    }
+
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
     public ResponseEntity<OrderResponse> updateOrderStatus(
@@ -65,6 +71,14 @@ public class OrderController {
     public ResponseEntity<Void> archiveMyOrder(@PathVariable Long id, Authentication authentication) {
         orderService.archiveMyOrder(id, authentication.getName());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<OrderResponse> cancelMyOrder(@PathVariable Long id,
+                                                       @RequestBody(required = false) java.util.Map<String, String> body,
+                                                       Authentication authentication) {
+        return ResponseEntity.ok(orderService.cancelMyOrder(id, authentication.getName(),
+                body != null ? body.get("reason") : null));
     }
 
     @GetMapping

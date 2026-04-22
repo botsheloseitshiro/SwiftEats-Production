@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Clock3, ShoppingCart, Star, Tag, Truck, X } from 'lucide-react';
-import restaurantService, { menuService } from '../services/restaurant.service';
+import { ArrowLeft, Clock3, Heart, ShoppingCart, Star, Tag, Truck, X } from 'lucide-react';
+import restaurantService from '../services/restaurant.service';
+import menuService from '../services/menu.service';
 import reviewService from '../services/review.service';
 import { MenuItemCard } from '../components/ProtectedRoute';
 import SortSelect from '../components/SortSelect';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useFavorites } from '../context/FavoritesContext';
 
 const reviewSortOptions = [
   { value: 'newest', label: 'Newest first' },
@@ -21,6 +23,7 @@ export default function MenuPage() {
   const location = useLocation();
   const { isAuthenticated, user } = useAuth();
   const { addToCart, updateQuantity, getRestaurantCart } = useCart();
+  const { isFavorite, isFavoritePending, toggleFavorite } = useFavorites();
 
   const [restaurant, setRestaurant] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
@@ -41,7 +44,7 @@ export default function MenuPage() {
       try {
         const [restaurantData, menuData, reviewData] = await Promise.all([
           restaurantService.getById(restaurantId),
-          menuService.getByRestaurant(restaurantId),
+          menuService.getMenuByRestaurant(restaurantId),
           reviewService.getRestaurantReviews(restaurantId),
         ]);
         setRestaurant(restaurantData);
@@ -63,6 +66,7 @@ export default function MenuPage() {
     + (restaurantCart?.deliveryFee || 0);
 
   const canOrder = isAuthenticated && user?.role === 'CUSTOMER';
+  const canFavoriteRestaurant = canOrder && !!restaurant?.id;
   const showGuestAdd = !isAuthenticated;
   const categories = ['All', 'Promotions', ...new Set(menuItems.map((item) => item.category).filter(Boolean))];
   const promotionItems = menuItems.filter((item) => item.onPromotion);
@@ -180,6 +184,20 @@ export default function MenuPage() {
                 <span style={metaPill}><Clock3 size={13} /> {restaurant?.deliveryTimeMinutes} min</span>
                 <span style={metaPill}><Truck size={13} />{restaurant?.deliveryFee === 0 ? ' Free delivery' : ` R${restaurant?.deliveryFee?.toFixed(0)} delivery`}</span>
               </div>
+              {canFavoriteRestaurant && (
+                <button
+                  type="button"
+                  style={{
+                    ...favoriteHeroBtn,
+                    ...(isFavorite(restaurant.id) ? favoriteHeroBtnActive : {}),
+                  }}
+                  disabled={isFavoritePending(restaurant.id)}
+                  onClick={() => toggleFavorite(restaurant).catch(() => {})}
+                >
+                  <Heart size={16} style={isFavorite(restaurant.id) ? { fill: 'currentColor' } : undefined} />
+                  {isFavorite(restaurant.id) ? 'Saved to favorites' : 'Save restaurant'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -414,6 +432,8 @@ const restaurantTitle = { fontFamily: 'var(--font-display)', fontSize: 'clamp(1.
 const restaurantDesc = { color: 'rgba(255,255,255,0.75)', fontSize: '0.9375rem', maxWidth: '500px' };
 const metaRow = { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' };
 const metaPill = { background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.25)', color: 'white', padding: '4px 12px', borderRadius: '999px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '4px' };
+const favoriteHeroBtn = { marginTop: '14px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 14px', borderRadius: '999px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.12)', color: 'white', fontWeight: 700, backdropFilter: 'blur(4px)' };
+const favoriteHeroBtnActive = { background: 'var(--primary)', borderColor: 'rgba(255,255,255,0.15)' };
 const hoursCard = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '20px', marginBottom: '24px' };
 const hoursHeader = { display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '14px' };
 const hoursGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' };

@@ -76,6 +76,16 @@ public class Restaurant {
     @Builder.Default
     private boolean active = true;
 
+    @Column(name = "accepting_orders", nullable = false)
+    @Builder.Default
+    private boolean acceptingOrders = true;
+
+    @Column(name = "pause_orders_until")
+    private LocalDateTime pauseOrdersUntil;
+
+    @Column(name = "holiday_hours", length = 1000)
+    private String holidayHours;
+
     @Column(name = "monday_hours", length = 50)
     @Builder.Default
     private String mondayHours = "07:30-21:00";
@@ -113,6 +123,10 @@ public class Restaurant {
     @Builder.Default
     private List<MenuItem> menuItems = new ArrayList<>();
 
+    @OneToMany(mappedBy = "restaurant", fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<Driver> drivers = new ArrayList<>();
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -134,6 +148,10 @@ public class Restaurant {
     }
 
     public boolean isOpenAt(DayOfWeek dayOfWeek, LocalTime localTime) {
+        return acceptingOrders && isWithinTradingHours(dayOfWeek, localTime);
+    }
+
+    public boolean isWithinTradingHours(DayOfWeek dayOfWeek, LocalTime localTime) {
         String hours = getHoursForDay(dayOfWeek);
         if (hours == null || hours.isBlank() || "CLOSED".equalsIgnoreCase(hours.trim())) {
             return false;

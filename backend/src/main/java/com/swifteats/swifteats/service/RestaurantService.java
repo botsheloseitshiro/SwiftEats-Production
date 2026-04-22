@@ -2,10 +2,16 @@ package com.swifteats.swifteats.service;
 
 import com.swifteats.swifteats.dto.RestaurantDTO;
 import com.swifteats.swifteats.dto.common.PaginatedResponse;
+import com.swifteats.swifteats.dto.restaurant.RestaurantOperationsRequest;
+import com.swifteats.swifteats.dto.restaurant.RestaurantOwnerAnalyticsDTO;
 import com.swifteats.swifteats.exception.ResourceNotFoundException;
+import com.swifteats.swifteats.model.Order;
+import com.swifteats.swifteats.model.OrderItem;
+import com.swifteats.swifteats.model.OrderStatus;
 import com.swifteats.swifteats.model.Restaurant;
 import com.swifteats.swifteats.model.Role;
 import com.swifteats.swifteats.model.User;
+import com.swifteats.swifteats.repository.OrderRepository;
 import com.swifteats.swifteats.repository.RestaurantRepository;
 import com.swifteats.swifteats.repository.ReviewRepository;
 import com.swifteats.swifteats.repository.UserRepository;
@@ -22,11 +28,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Comparator;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -37,7 +46,9 @@ public class RestaurantService {
     private final RestaurantRepository restaurantRepository;
     private final UserRepository userRepository;
     private final ReviewRepository reviewRepository;
+    private final OrderRepository orderRepository;
     private final AuditLogService auditLogService;
+    private final GeocodingService geocodingService;
 
     @Transactional(readOnly = true)
     public List<RestaurantDTO> getAllActiveRestaurants() {
@@ -96,6 +107,7 @@ public class RestaurantService {
 
     @Transactional
     public RestaurantDTO createRestaurant(RestaurantDTO dto) {
+        applyGeocoding(dto);
         Restaurant restaurant = Restaurant.builder()
                 .name(dto.getName())
                 .description(dto.getDescription())
@@ -110,6 +122,7 @@ public class RestaurantService {
                 .deliveryFee(dto.getDeliveryFee() != null ? dto.getDeliveryFee() : BigDecimal.valueOf(25.00))
                 .rating(dto.getRating() != null ? dto.getRating() : 0.0)
                 .active(dto.isActive())
+                .acceptingOrders(true)
                 .mondayHours(defaultHours(dto.getMondayHours(), "07:30-21:00"))
                 .tuesdayHours(defaultHours(dto.getTuesdayHours(), "07:30-21:00"))
                 .wednesdayHours(defaultHours(dto.getWednesdayHours(), "07:30-21:00"))
@@ -137,6 +150,13 @@ public class RestaurantService {
         if (dto.getCity() != null) restaurant.setCity(dto.getCity());
         if (dto.getLatitude() != null) restaurant.setLatitude(dto.getLatitude());
         if (dto.getLongitude() != null) restaurant.setLongitude(dto.getLongitude());
+        if (dto.getLatitude() == null || dto.getLongitude() == null) {
+            GeocodingService.Coordinates coordinates = geocodingService.geocode(dto.getAddress(), dto.getCity());
+            if (coordinates != null) {
+                restaurant.setLatitude(coordinates.latitude());
+                restaurant.setLongitude(coordinates.longitude());
+            }
+        }
         if (dto.getDeliveryRadiusKm() != null) restaurant.setDeliveryRadiusKm(dto.getDeliveryRadiusKm());
         restaurant.setCategory(dto.getCategory());
         restaurant.setImageUrl(dto.getImageUrl());
@@ -216,11 +236,84 @@ public class RestaurantService {
     }
 
     @Transactional(readOnly = true)
-    public List<RestaurantDTO> getNearbyRestaurants(double lat, double lon, double radiusKm) {
-        return restaurantRepository.findNearbyRestaurants(lat, lon, radiusKm)
-                .stream()
+    public List<RestaurantDTO> getNearbyRestaurants(double lat, double lon, double radiusKm, Double minRating, Integer maxDeliveryTimeMinutes) {
+        return restaurantRepository.findByActiveTrue().stream()
+                .filter(restaurant -> restaurant.getLatitude() != null && restaurant.getLongitude() != null)
                 .map(restaurant -> toDtoWithDistance(restaurant, lat, lon))
+                .filter(dto -> dto.getDistanceKm() != null && dto.getDistanceKm() <= radiusKm)
+                .filter(dto -> dto.getDeliveryRadiusKm() == null || dto.getDistanceKm() <= dto.getDeliveryRadiusKm())
+                .filter(dto -> minRating == null || (dto.getRating() != null && dto.getRating() >= minRating))
+                .filter(dto -> maxDeliveryTimeMinutes == null || (dto.getDeliveryTimeMinutes() != null && dto.getDeliveryTimeMinutes() <= maxDeliveryTimeMinutes))
+                .sorted(Comparator.comparing(RestaurantDTO::getDistanceKm))
                 .toList();
+    }
+
+    @Transactional
+    public RestaurantDTO updateRestaurantOperations(Long id, RestaurantOperationsRequest request) {
+        Restaurant restaurant = restaurantRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + id));
+        validateRestaurantAccess(restaurant);
+        if (request.getAcceptingOrders() != null) {
+            restaurant.setAcceptingOrders(request.getAcceptingOrders());
+        }
+        if (request.getPauseOrdersUntil() != null) {
+            restaurant.setPauseOrdersUntil(request.getPauseOrdersUntil());
+        }
+        if (request.getHolidayHours() != null) {
+            restaurant.setHolidayHours(request.getHolidayHours());
+        }
+        Restaurant updated = restaurantRepository.save(restaurant);
+        auditLogService.log("RESTAURANT_OPERATIONS_UPDATED", currentActor(), "Restaurant", String.valueOf(updated.getId()),
+                Map.of("acceptingOrders", updated.isAcceptingOrders()));
+        return toDto(updated);
+    }
+
+    @Transactional(readOnly = true)
+    public RestaurantOwnerAnalyticsDTO getRestaurantAnalytics(String managerEmail, Long restaurantId) {
+        Restaurant restaurant = getManagedRestaurant(managerEmail, restaurantId);
+        LocalDate today = LocalDate.now(RESTAURANT_ZONE);
+        List<Order> todayOrders = orderRepository.findByRestaurantIdAndCreatedAtBetween(
+                restaurant.getId(),
+                today.atStartOfDay(),
+                today.plusDays(1).atStartOfDay().minusNanos(1));
+
+        BigDecimal dailyRevenue = todayOrders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.DELIVERED)
+                .map(Order::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<RestaurantOwnerAnalyticsDTO.TopSellingItemDTO> topSellingItems = todayOrders.stream()
+                .flatMap(order -> order.getOrderItems().stream())
+                .collect(Collectors.groupingBy(OrderItem::getItemName, Collectors.summingLong(OrderItem::getQuantity)))
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(5)
+                .map(entry -> RestaurantOwnerAnalyticsDTO.TopSellingItemDTO.builder()
+                        .menuItemId(null)
+                        .itemName(entry.getKey())
+                        .quantitySold(entry.getValue())
+                        .build())
+                .toList();
+
+        return RestaurantOwnerAnalyticsDTO.builder()
+                .dailyRevenue(dailyRevenue)
+                .orderVolume(todayOrders.size())
+                .topSellingItems(topSellingItems)
+                .build();
+    }
+
+    @Transactional
+    public RestaurantDTO assignRestaurantManager(Long restaurantId, Long adminUserId) {
+        Restaurant restaurant = restaurantRepository.findById(restaurantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + restaurantId));
+        User manager = userRepository.findById(adminUserId)
+                .filter(user -> user.getRole() == Role.RESTAURANT_ADMIN || user.getRole() == Role.ADMIN)
+                .orElseThrow(() -> new ResourceNotFoundException("Restaurant admin not found with id: " + adminUserId));
+        restaurant.setManager(manager);
+        Restaurant updated = restaurantRepository.save(restaurant);
+        auditLogService.log("RESTAURANT_MANAGER_ASSIGNED", currentActor(), "Restaurant", String.valueOf(restaurantId),
+                Map.of("managerUserId", adminUserId));
+        return toDto(updated);
     }
 
     /** Haversine great-circle distance in kilometres */
@@ -263,7 +356,7 @@ public class RestaurantService {
                 .filter(item -> !item.isArchived() && item.isAvailable() && item.isOnPromotion())
                 .count());
         ZonedDateTime now = ZonedDateTime.now(RESTAURANT_ZONE);
-        dto.setOpenNow(restaurant.isActive() && restaurant.isOpenAt(now.getDayOfWeek(), now.toLocalTime()));
+        dto.setOpenNow(restaurant.isActive() && restaurant.isWithinTradingHours(now.getDayOfWeek(), now.toLocalTime()));
         return dto;
     }
 
@@ -278,6 +371,33 @@ public class RestaurantService {
 
     private String defaultHours(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private Restaurant getManagedRestaurant(String managerEmail, Long restaurantId) {
+        User user = userRepository.findByEmail(managerEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + managerEmail));
+        List<Restaurant> managedRestaurants = restaurantRepository.findByManagerId(user.getId());
+        if (managedRestaurants.isEmpty()) {
+            throw new AccessDeniedException("No managed restaurants found for this account");
+        }
+        if (restaurantId != null) {
+            return managedRestaurants.stream()
+                    .filter(restaurant -> Objects.equals(restaurant.getId(), restaurantId))
+                    .findFirst()
+                    .orElseThrow(() -> new AccessDeniedException("Restaurant is not managed by this account"));
+        }
+        return managedRestaurants.get(0);
+    }
+
+    private void applyGeocoding(RestaurantDTO dto) {
+        if (dto.getLatitude() != null && dto.getLongitude() != null) {
+            return;
+        }
+        GeocodingService.Coordinates coordinates = geocodingService.geocode(dto.getAddress(), dto.getCity());
+        if (coordinates != null) {
+            dto.setLatitude(coordinates.latitude());
+            dto.setLongitude(coordinates.longitude());
+        }
     }
 
     private String currentActor() {

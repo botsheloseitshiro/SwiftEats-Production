@@ -84,7 +84,7 @@ If you want both local development and production frontend access, use a comma-s
 
 - `CORS_ALLOWED_ORIGINS=http://localhost:3000,https://<your-vercel-domain>`
 - `FRONTEND_RESET_PASSWORD_URL=https://<your-vercel-domain>/reset-password`
-- `RESET_PASSWORD_EXPOSE_LINK=true`
+- `RESET_PASSWORD_EXPOSE_LINK=false`
 
 Optional mail settings:
 
@@ -93,6 +93,13 @@ Optional mail settings:
 - `MAIL_USERNAME=`
 - `MAIL_PASSWORD=`
 - `MAIL_FROM=no-reply@swifteats.app`
+
+Optional API docs:
+
+- `SPRINGDOC_API_DOCS_ENABLED=false`
+- `SPRINGDOC_SWAGGER_UI_ENABLED=false`
+
+Leave both disabled for normal production deployments.
 
 ### Seeder Settings
 
@@ -194,6 +201,7 @@ Seed passwords:
 12. Set `SEEDER_ENABLED=false`
 13. Redeploy backend
 14. Test login, nearby restaurants, forgot password, and orders
+15. Confirm favorites, notifications, and role dashboards load correctly
 
 ## 9. Generate a Strong JWT Secret
 

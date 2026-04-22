@@ -137,6 +137,18 @@ public class MenuItemService {
                 Map.of("restaurantId", item.getRestaurant().getId()));
     }
 
+    @Transactional
+    public MenuItemDTO updateStockStatus(Long id, boolean available) {
+        MenuItem item = menuItemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Menu item not found with id: " + id));
+        validateRestaurantAccess(item.getRestaurant());
+        item.setAvailable(available);
+        MenuItem saved = menuItemRepository.save(item);
+        auditLogService.log("MENU_ITEM_STOCK_STATUS_UPDATED", authActor(), "MenuItem", String.valueOf(id),
+                Map.of("available", available));
+        return toDto(saved);
+    }
+
     private void validateRestaurantAccess(Restaurant restaurant) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {

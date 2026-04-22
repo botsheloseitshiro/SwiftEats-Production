@@ -24,6 +24,7 @@ public class RestaurantAdminService {
     private final RestaurantRepository restaurantRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final GeocodingService geocodingService;
 
     @Transactional
     public RestaurantRegistrationResponse registerRestaurant(RegisterRestaurantRequest request) {
@@ -46,13 +47,17 @@ public class RestaurantAdminService {
         log.info("Restaurant admin account created: {} ({})", request.getAdminFullName(), request.getAdminEmail());
 
         // Step 3: Create the restaurant
+        GeocodingService.Coordinates coordinates = request.getLatitude() != null && request.getLongitude() != null
+                ? new GeocodingService.Coordinates(request.getLatitude(), request.getLongitude())
+                : geocodingService.geocode(request.getAddress(), request.getCity());
+
         Restaurant restaurant = Restaurant.builder()
                 .name(request.getName())
                 .description(request.getDescription())
                 .address(request.getAddress())
                 .city(request.getCity())
-                .latitude(request.getLatitude())
-                .longitude(request.getLongitude())
+                .latitude(coordinates != null ? coordinates.latitude() : request.getLatitude())
+                .longitude(coordinates != null ? coordinates.longitude() : request.getLongitude())
                 .deliveryRadiusKm(request.getDeliveryRadiusKm() != null ? request.getDeliveryRadiusKm() : 10.0)
                 .category(request.getCategory())
                 .imageUrl(request.getImageUrl())
@@ -61,6 +66,7 @@ public class RestaurantAdminService {
                 .rating(0.0)  // New restaurants start with no rating
                 .manager(savedAdmin)  // Associate the restaurant admin
                 .active(true)
+                .acceptingOrders(true)
                 .build();
 
         Restaurant savedRestaurant = restaurantRepository.save(restaurant);

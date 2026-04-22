@@ -3,7 +3,9 @@ package com.swifteats.swifteats.controller;
 import com.swifteats.swifteats.dto.RestaurantDTO;
 import com.swifteats.swifteats.dto.common.PaginatedResponse;
 import com.swifteats.swifteats.dto.restaurant.RegisterRestaurantRequest;
+import com.swifteats.swifteats.dto.restaurant.RestaurantOperationsRequest;
 import com.swifteats.swifteats.dto.restaurant.RestaurantRegistrationResponse;
+import com.swifteats.swifteats.dto.restaurant.RestaurantOwnerAnalyticsDTO;
 import com.swifteats.swifteats.service.RestaurantAdminService;
 import com.swifteats.swifteats.service.RestaurantService;
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,8 +34,10 @@ public class RestaurantController {
     public ResponseEntity<List<RestaurantDTO>> getNearbyRestaurants(
             @RequestParam double lat,
             @RequestParam double lon,
-            @RequestParam(defaultValue = "10") double radiusKm) {
-        return ResponseEntity.ok(restaurantService.getNearbyRestaurants(lat, lon, radiusKm));
+            @RequestParam(defaultValue = "10") double radiusKm,
+            @RequestParam(required = false) Double minRating,
+            @RequestParam(required = false) Integer maxDeliveryTimeMinutes) {
+        return ResponseEntity.ok(restaurantService.getNearbyRestaurants(lat, lon, radiusKm, minRating, maxDeliveryTimeMinutes));
     }
 
     @GetMapping
@@ -92,6 +97,27 @@ public class RestaurantController {
     @PreAuthorize("hasAnyRole('ADMIN', 'RESTAURANT_ADMIN')")
     public ResponseEntity<RestaurantDTO> updateRestaurant(@PathVariable Long id, @Valid @RequestBody RestaurantDTO dto) {
         return ResponseEntity.ok(restaurantService.updateRestaurant(id, dto));
+    }
+
+    @PutMapping("/{id}/operations")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RESTAURANT_ADMIN')")
+    public ResponseEntity<RestaurantDTO> updateRestaurantOperations(@PathVariable Long id,
+                                                                    @RequestBody RestaurantOperationsRequest request) {
+        return ResponseEntity.ok(restaurantService.updateRestaurantOperations(id, request));
+    }
+
+    @GetMapping("/restaurant-admin/analytics")
+    @PreAuthorize("hasRole('RESTAURANT_ADMIN')")
+    public ResponseEntity<RestaurantOwnerAnalyticsDTO> getRestaurantAnalytics(Authentication authentication,
+                                                                              @RequestParam(required = false) Long restaurantId) {
+        return ResponseEntity.ok(restaurantService.getRestaurantAnalytics(authentication.getName(), restaurantId));
+    }
+
+    @PutMapping("/{id}/manager")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<RestaurantDTO> assignRestaurantManager(@PathVariable Long id,
+                                                                 @RequestBody Map<String, Long> request) {
+        return ResponseEntity.ok(restaurantService.assignRestaurantManager(id, request.get("adminUserId")));
     }
 
     @DeleteMapping("/{id}")

@@ -44,8 +44,18 @@ const orderService = {
     return response.data;
   },
 
+  cancelOrder: async (orderId, reason) => {
+    const response = await api.post(`/orders/${orderId}/cancel`, { reason });
+    return response.data;
+  },
+
   updateOrderStatus: async (orderId, status) => {
     const response = await api.put(`/orders/${orderId}/status`, { status });
+    return response.data;
+  },
+
+  getTipSuggestions: async (subtotal) => {
+    const response = await api.get('/orders/tips', { params: { subtotal } });
     return response.data;
   },
 

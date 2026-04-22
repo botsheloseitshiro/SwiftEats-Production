@@ -26,9 +26,6 @@ public class RefreshTokenService {
 
     @Transactional
     public String createRefreshToken(User user) {
-        refreshTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
-        refreshTokenRepository.deleteByUser(user);
-
         String rawToken = UUID.randomUUID().toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", "");
 

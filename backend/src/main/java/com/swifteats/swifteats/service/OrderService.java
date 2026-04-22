@@ -3,16 +3,20 @@ package com.swifteats.swifteats.service;
 import com.swifteats.swifteats.dto.common.PaginatedResponse;
 import com.swifteats.swifteats.dto.order.OrderRequest;
 import com.swifteats.swifteats.dto.order.OrderResponse;
+import com.swifteats.swifteats.dto.order.TipSuggestionDTO;
 import com.swifteats.swifteats.exception.ResourceNotFoundException;
 import com.swifteats.swifteats.model.CardType;
 import com.swifteats.swifteats.model.Driver;
+import com.swifteats.swifteats.model.DriverAssignmentStatus;
 import com.swifteats.swifteats.model.FulfillmentType;
 import com.swifteats.swifteats.model.MenuItem;
+import com.swifteats.swifteats.model.NotificationType;
 import com.swifteats.swifteats.model.Order;
 import com.swifteats.swifteats.model.OrderItem;
 import com.swifteats.swifteats.model.OrderStatus;
 import com.swifteats.swifteats.model.PaymentMethod;
 import com.swifteats.swifteats.model.Restaurant;
+import com.swifteats.swifteats.model.RefundStatus;
 import com.swifteats.swifteats.model.SavedCard;
 import com.swifteats.swifteats.model.User;
 import com.swifteats.swifteats.repository.DriverRepository;
@@ -31,9 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +60,7 @@ public class OrderService {
     private final SavedCardRepository savedCardRepository;
     private final DriverRepository driverRepository;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Transactional
     public OrderResponse placeOrder(OrderRequest request, String userEmail) {
@@ -67,9 +74,19 @@ public class OrderService {
         if (!restaurant.isActive()) {
             throw new IllegalStateException("Restaurant is currently not accepting orders.");
         }
+        if (!restaurant.isAcceptingOrders()) {
+            throw new IllegalStateException("Restaurant has temporarily paused incoming orders.");
+        }
 
         ZonedDateTime now = ZonedDateTime.now(RESTAURANT_ZONE);
-        if (!restaurant.isOpenAt(now.getDayOfWeek(), now.toLocalTime())) {
+        LocalDateTime scheduledFor = request.getScheduledFor();
+        if (scheduledFor != null && scheduledFor.isBefore(LocalDateTime.now().plusMinutes(15))) {
+            throw new IllegalArgumentException("Scheduled orders must be at least 15 minutes in the future.");
+        }
+        ZonedDateTime orderTime = scheduledFor != null
+                ? scheduledFor.atZone(RESTAURANT_ZONE)
+                : now;
+        if (!restaurant.isOpenAt(orderTime.getDayOfWeek(), orderTime.toLocalTime())) {
             throw new IllegalStateException("Restaurant is currently closed.");
         }
 
@@ -95,6 +112,7 @@ public class OrderService {
                 .tipAmount(tipAmount)
                 .deliveryAddress(deliveryAddress)
                 .notes(request.getNotes())
+                .scheduledFor(scheduledFor)
                 .orderItems(new ArrayList<>())
                 .build();
 
@@ -140,18 +158,12 @@ public class OrderService {
                 .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         order.setTotalAmount(totalAmount);
 
-        if (fulfillmentType == FulfillmentType.DELIVERY) {
-            List<Driver> availableDrivers = driverRepository.findByAvailableTrue();
-            if (!availableDrivers.isEmpty()) {
-                Driver driver = availableDrivers.get(0);
-                order.setDriver(driver);
-                driver.setAvailable(false);
-                driverRepository.save(driver);
-                log.info("Driver {} assigned to order", driver.getUser().getFullName());
-            }
-        }
+        autoAssignNearestDriver(order);
 
         Order savedOrder = orderRepository.save(order);
+        notificationService.createNotification(user, NotificationType.ORDER_UPDATE,
+                "Order placed", "Your order #" + savedOrder.getId() + " has been placed successfully.",
+                "Order", String.valueOf(savedOrder.getId()));
         log.info("Order placed: id={}, user={}, total={}", savedOrder.getId(), user.getEmail(), totalAmount);
         auditLogService.log("ORDER_PLACED", user.getEmail(), "Order", String.valueOf(savedOrder.getId()),
                 Map.of(
@@ -215,6 +227,9 @@ public class OrderService {
         }
 
         Order updated = orderRepository.save(order);
+        notificationService.createNotification(order.getUser(), NotificationType.ORDER_UPDATE,
+                "Order status updated", "Your order #" + orderId + " is now " + status + ".",
+                "Order", String.valueOf(orderId));
         log.info("Order {} status changed: {} -> {}", orderId, previousStatus, status);
         auditLogService.log("ORDER_STATUS_CHANGED", "system", "Order", String.valueOf(orderId),
                 Map.of("from", previousStatus, "to", status));
@@ -297,6 +312,60 @@ public class OrderService {
         order.setArchivedByCustomer(true);
         orderRepository.save(order);
         auditLogService.log("ORDER_ARCHIVED_BY_CUSTOMER", userEmail, "Order", String.valueOf(orderId), Map.of());
+    }
+
+    @Transactional(readOnly = true)
+    public TipSuggestionDTO getTipSuggestions(BigDecimal subtotal) {
+        BigDecimal normalizedSubtotal = normalizeMoney(subtotal == null ? BigDecimal.ZERO : subtotal);
+        BigDecimal base = normalizedSubtotal.compareTo(BigDecimal.valueOf(150)) >= 0
+                ? BigDecimal.valueOf(25)
+                : normalizedSubtotal.compareTo(BigDecimal.valueOf(75)) >= 0
+                ? BigDecimal.valueOf(15)
+                : BigDecimal.valueOf(10);
+        int hour = ZonedDateTime.now(RESTAURANT_ZONE).getHour();
+        String reason = "Suggested based on basket size.";
+        if (hour >= 22 || hour <= 5) {
+            base = base.add(BigDecimal.valueOf(5));
+            reason = "Suggested based on basket size and late-night delivery window.";
+        }
+        return TipSuggestionDTO.builder()
+                .suggestedTip(base)
+                .options(List.of(base, base.add(BigDecimal.valueOf(10)), base.add(BigDecimal.valueOf(20))))
+                .reason(reason)
+                .build();
+    }
+
+    @Transactional
+    public OrderResponse cancelMyOrder(Long orderId, String userEmail, String reason) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You can only cancel your own orders.");
+        }
+        if (order.getCreatedAt() != null && order.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(5))) {
+            throw new IllegalStateException("The cancellation window has expired.");
+        }
+        if (!(order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.CONFIRMED)) {
+            throw new IllegalStateException("This order can no longer be cancelled.");
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
+        order.setCancellationReason(reason);
+        order.setRefundStatus(order.getPaymentMethod() == PaymentMethod.CARD ? RefundStatus.APPROVED : RefundStatus.NOT_APPLICABLE);
+        if (order.getDriver() != null) {
+            order.getDriver().setAvailable(true);
+            driverRepository.save(order.getDriver());
+        }
+        Order saved = orderRepository.save(order);
+        notificationService.createNotification(user, NotificationType.ORDER_UPDATE,
+                "Order cancelled", "Order #" + orderId + " was cancelled successfully.", "Order", String.valueOf(orderId));
+        auditLogService.log("ORDER_CANCELLED_BY_CUSTOMER", userEmail, "Order", String.valueOf(orderId),
+                Map.of("refundStatus", saved.getRefundStatus(), "reason", reason == null ? "" : reason));
+        return OrderResponse.fromEntity(saved);
     }
 
     private void validateOrderItems(OrderRequest request) {
@@ -454,5 +523,66 @@ public class OrderService {
 
         return manager.getManagedRestaurants().stream()
                 .anyMatch(restaurant -> restaurant.getId().equals(restaurantId));
+    }
+
+    @Transactional
+    public void autoAssignPendingOrdersForRestaurant(Long restaurantId) {
+        Restaurant restaurant = restaurantRepository.findById(restaurantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + restaurantId));
+        List<Order> pendingOrders = orderRepository.findByRestaurantIdAndDriverIsNullAndFulfillmentTypeAndStatusInOrderByCreatedAtAsc(
+                restaurantId,
+                FulfillmentType.DELIVERY,
+                List.of(OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING)
+        );
+        for (Order pendingOrder : pendingOrders) {
+            if (pendingOrder.getScheduledFor() != null && pendingOrder.getScheduledFor().isAfter(LocalDateTime.now(RESTAURANT_ZONE))) {
+                continue;
+            }
+            autoAssignNearestDriver(pendingOrder);
+        }
+    }
+
+    private void autoAssignNearestDriver(Order order) {
+        if (order.getFulfillmentType() != FulfillmentType.DELIVERY) {
+            return;
+        }
+        if (order.getDriver() != null) {
+            return;
+        }
+        List<Driver> availableDrivers = driverRepository.findByRestaurantIdAndAvailableTrueAndActiveTrueAndOnlineTrue(order.getRestaurant().getId()).stream()
+                .sorted(Comparator
+                        .comparing((Driver driver) -> driver.getTotalDeliveries() == null ? 0 : driver.getTotalDeliveries())
+                        .thenComparing(driver -> {
+                            if (driver.getLatitude() == null || driver.getLongitude() == null
+                                    || order.getRestaurant().getLatitude() == null || order.getRestaurant().getLongitude() == null) {
+                                return Double.MAX_VALUE;
+                            }
+                            return haversineKm(driver.getLatitude(), driver.getLongitude(),
+                                    order.getRestaurant().getLatitude(), order.getRestaurant().getLongitude());
+                        })
+                        .thenComparing(Driver::getId))
+                .toList();
+
+        if (!availableDrivers.isEmpty()) {
+            Driver driver = availableDrivers.get(0);
+            order.setDriver(driver);
+            order.setDriverAssignmentStatus(DriverAssignmentStatus.PENDING_DRIVER_RESPONSE);
+            driver.setAvailable(false);
+            orderRepository.save(order);
+            driverRepository.save(driver);
+            notificationService.createNotification(driver.getUser(), NotificationType.DRIVER_ASSIGNMENT,
+                    "New order assigned", "A new order is waiting for your response.", "Order", null);
+            log.info("Driver {} assigned to order", driver.getUser().getFullName());
+        }
+    }
+
+    private double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double earthRadiusKm = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 }

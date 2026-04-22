@@ -30,8 +30,9 @@ class OrderServiceTest {
         SavedCardRepository savedCardRepository = mock(SavedCardRepository.class);
         DriverRepository driverRepository = mock(DriverRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
+        NotificationService notificationService = mock(NotificationService.class);
 
-        OrderService service = new OrderService(orderRepository, menuItemRepository, restaurantRepository, userRepository, savedCardRepository, driverRepository, auditLogService);
+        OrderService service = new OrderService(orderRepository, menuItemRepository, restaurantRepository, userRepository, savedCardRepository, driverRepository, auditLogService, notificationService);
 
         User user = User.builder().id(1L).email("test@example.com").address("Main Street").build();
         Restaurant restaurant = Restaurant.builder()

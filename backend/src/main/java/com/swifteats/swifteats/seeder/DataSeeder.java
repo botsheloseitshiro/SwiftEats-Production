@@ -2,8 +2,11 @@ package com.swifteats.swifteats.seeder;
 
 import com.swifteats.swifteats.model.CardType;
 import com.swifteats.swifteats.model.Driver;
+import com.swifteats.swifteats.model.FavoriteRestaurant;
 import com.swifteats.swifteats.model.FulfillmentType;
 import com.swifteats.swifteats.model.MenuItem;
+import com.swifteats.swifteats.model.Notification;
+import com.swifteats.swifteats.model.NotificationType;
 import com.swifteats.swifteats.model.Order;
 import com.swifteats.swifteats.model.OrderItem;
 import com.swifteats.swifteats.model.OrderStatus;
@@ -15,7 +18,9 @@ import com.swifteats.swifteats.model.SavedAddress;
 import com.swifteats.swifteats.model.SavedCard;
 import com.swifteats.swifteats.model.User;
 import com.swifteats.swifteats.repository.DriverRepository;
+import com.swifteats.swifteats.repository.FavoriteRestaurantRepository;
 import com.swifteats.swifteats.repository.MenuItemRepository;
+import com.swifteats.swifteats.repository.NotificationRepository;
 import com.swifteats.swifteats.repository.OrderRepository;
 import com.swifteats.swifteats.repository.RestaurantRepository;
 import com.swifteats.swifteats.repository.ReviewRepository;
@@ -26,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +49,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
+    private static final int DRIVERS_PER_RESTAURANT = 5;
+
     @Value("${app.seeder.enabled:true}")
     private boolean seederEnabled;
 
@@ -50,7 +58,9 @@ public class DataSeeder implements CommandLineRunner {
     private final RestaurantRepository restaurantRepository;
     private final MenuItemRepository menuItemRepository;
     private final DriverRepository driverRepository;
+    private final FavoriteRestaurantRepository favoriteRestaurantRepository;
     private final OrderRepository orderRepository;
+    private final NotificationRepository notificationRepository;
     private final ReviewRepository reviewRepository;
     private final SavedAddressRepository savedAddressRepository;
     private final SavedCardRepository savedCardRepository;
@@ -66,10 +76,11 @@ public class DataSeeder implements CommandLineRunner {
 
         seedPlatformUsers();
         seedCustomers();
-        seedDrivers();
         seedRestaurantNetwork();
+        migrateLegacySeedDrivers();
         seedSavedAddresses();
         seedSavedCards();
+        seedFavoriteRestaurants();
 
         if (orderRepository.count() == 0) {
             seedOrders();
@@ -78,6 +89,8 @@ public class DataSeeder implements CommandLineRunner {
         if (reviewRepository.count() == 0) {
             seedReviews();
         }
+
+        seedNotifications();
 
         log.info("Database seeding complete.");
         logSummary();
@@ -132,31 +145,8 @@ public class DataSeeder implements CommandLineRunner {
                 .build();
     }
 
-    private void seedDrivers() {
-        List<DriverSeed> seeds = List.of(
-                new DriverSeed("Sipho Ndlovu", "sipho.ndlovu@driver.co.za", "0765551234", "88 Jan Smuts Ave, Johannesburg, 2196", "Motorcycle", "GP 12 KLM 789", true, 125),
-                new DriverSeed("Thabo Molefe", "thabo.molefe@driver.co.za", "0725559876", "123 Main Street, Cape Town, 8001", "Bicycle", "CA 459 233", true, 89),
-                new DriverSeed("Mbuso Zungu", "mbuso.zungu@driver.co.za", "0721234098", "567 Bay Road, Durban, 4001", "Car", "ND 581 441", true, 267),
-                new DriverSeed("Innocent Banda", "innocent.banda@driver.co.za", "0782019384", "999 Market Street, Pretoria, 0002", "Motorcycle", "GP 08 MTO 345", true, 156),
-                new DriverSeed("Ayanda Sithole", "ayanda.sithole@driver.co.za", "0732145645", "25 Lighthouse Road, Umhlanga, 4319", "Scooter", "ND 224 990", true, 92),
-                new DriverSeed("Kagiso Morake", "kagiso.morake@driver.co.za", "0719945612", "90 Nelson Mandela Drive, Rustenburg, 0299", "Car", "NW 771 552", true, 144)
-        );
-
-        for (DriverSeed seed : seeds) {
-            User user = upsertUser(User.builder()
-                    .fullName(seed.fullName())
-                    .email(seed.email())
-                    .password(passwordEncoder.encode("Driver123!"))
-                    .phoneNumber(seed.phoneNumber())
-                    .address(seed.address())
-                    .role(Role.DRIVER)
-                    .active(true)
-                    .build());
-            upsertDriverProfile(user, seed.vehicleType(), seed.licensePlate(), seed.available(), seed.totalDeliveries());
-        }
-    }
-
     private void seedRestaurantNetwork() {
+        int branchIndex = 0;
         for (BranchSeed branch : restaurantBranches()) {
             User manager = upsertUser(User.builder()
                     .fullName(branch.adminName())
@@ -170,6 +160,7 @@ public class DataSeeder implements CommandLineRunner {
 
             Restaurant restaurant = upsertRestaurant(branch, manager);
             menuTemplates(branch.brand()).forEach(menuSeed -> upsertMenuItem(restaurant, menuSeed));
+            seedDriversForRestaurant(restaurant, branchIndex++);
         }
     }
 
@@ -198,6 +189,36 @@ public class DataSeeder implements CommandLineRunner {
         }
     }
 
+    private void seedFavoriteRestaurants() {
+        List<User> customers = userRepository.findAll().stream()
+                .filter(user -> user.getRole() == Role.CUSTOMER)
+                .sorted(Comparator.comparing(User::getEmail))
+                .toList();
+        List<Restaurant> restaurants = restaurantRepository.findByActiveTrue().stream()
+                .sorted(Comparator.comparing(Restaurant::getName, Comparator.nullsLast(String::compareToIgnoreCase))
+                        .thenComparing(Restaurant::getCity, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .toList();
+
+        if (customers.isEmpty() || restaurants.isEmpty()) {
+            return;
+        }
+
+        for (int i = 0; i < customers.size(); i++) {
+            User customer = customers.get(i);
+            for (int offset = 0; offset < 3 && offset < restaurants.size(); offset++) {
+                Restaurant restaurant = restaurants.get((i * 2 + offset) % restaurants.size());
+                if (favoriteRestaurantRepository.existsByUserIdAndRestaurantId(customer.getId(), restaurant.getId())) {
+                    continue;
+                }
+
+                favoriteRestaurantRepository.save(FavoriteRestaurant.builder()
+                        .user(customer)
+                        .restaurant(restaurant)
+                        .build());
+            }
+        }
+    }
+
     private void seedOrders() {
         List<User> customers = userRepository.findAll().stream()
                 .filter(user -> user.getRole() == Role.CUSTOMER)
@@ -206,10 +227,6 @@ public class DataSeeder implements CommandLineRunner {
         List<Restaurant> restaurants = restaurantRepository.findByActiveTrue().stream()
                 .sorted(Comparator.comparing(Restaurant::getId))
                 .toList();
-        List<Driver> drivers = driverRepository.findAll().stream()
-                .sorted(Comparator.comparing(Driver::getId))
-                .toList();
-
         if (customers.isEmpty() || restaurants.isEmpty()) {
             return;
         }
@@ -235,8 +252,12 @@ public class DataSeeder implements CommandLineRunner {
                 OrderStatus status = statuses[(i + j) % statuses.length];
                 FulfillmentType fulfillmentType = j % 2 == 0 ? FulfillmentType.DELIVERY : FulfillmentType.COLLECTION;
                 PaymentMethod paymentMethod = j % 2 == 0 ? PaymentMethod.CARD : PaymentMethod.CASH_ON_DELIVERY;
-                Driver driver = (status != OrderStatus.PENDING && status != OrderStatus.CANCELLED && fulfillmentType == FulfillmentType.DELIVERY)
-                        ? drivers.get((i + j) % drivers.size())
+                List<Driver> restaurantDrivers = driverRepository.findByRestaurantId(restaurant.getId(), Pageable.unpaged())
+                        .getContent().stream()
+                        .sorted(Comparator.comparing(Driver::getId))
+                        .toList();
+                Driver driver = (status != OrderStatus.PENDING && status != OrderStatus.CANCELLED && fulfillmentType == FulfillmentType.DELIVERY && !restaurantDrivers.isEmpty())
+                        ? restaurantDrivers.get((i + j) % restaurantDrivers.size())
                         : null;
 
                 Order order = Order.builder()
@@ -253,6 +274,7 @@ public class DataSeeder implements CommandLineRunner {
                         .cardLastFour(paymentMethod == PaymentMethod.CARD ? "4242" : null)
                         .subtotalAmount(money(0))
                         .totalAmount(money(0))
+                        .scheduledFor(status == OrderStatus.PENDING && j == 1 ? LocalDateTime.now().plusHours(3 + i) : null)
                         .notes(j == 0 ? "Please ring the bell at the gate." : "Customer will collect in store.")
                         .orderItems(new ArrayList<>())
                         .build();
@@ -322,22 +344,212 @@ public class DataSeeder implements CommandLineRunner {
                 .orElseGet(() -> userRepository.save(user));
     }
 
-    private Driver upsertDriverProfile(User user, String vehicleType, String licensePlate, boolean available, Integer totalDeliveries) {
+    private void seedDriversForRestaurant(Restaurant restaurant, int branchIndex) {
+        String[] firstNames = {"Sipho", "Thabo", "Lerato", "Nomsa", "Ayanda", "Kagiso", "Mbali", "Sibusiso", "Zola", "Anele"};
+        String[] lastNames = {"Ndlovu", "Mokoena", "Dlamini", "Khumalo", "Naidoo", "Mabaso", "Petersen", "Mthembu", "Molefe", "Cele"};
+        String[] vehicleTypes = {"Motorcycle", "Scooter", "Car", "Bicycle"};
+        List<String> expectedEmails = new ArrayList<>();
+        for (int driverIndex = 0; driverIndex < DRIVERS_PER_RESTAURANT; driverIndex++) {
+            String fullName = firstNames[driverIndex % firstNames.length] + " "
+                    + lastNames[(branchIndex + driverIndex) % lastNames.length];
+            String email = buildDriverEmail(fullName, restaurant, null);
+            expectedEmails.add(email);
+            User user = upsertUser(User.builder()
+                    .fullName(fullName)
+                    .email(email)
+                    .password(passwordEncoder.encode("Driver123!"))
+                    .phoneNumber(String.format("07%08d", Math.abs((branchIndex + 1) * 100 + driverIndex) % 100000000))
+                    .address(restaurant.getAddress() + ", " + restaurant.getCity())
+                    .role(Role.DRIVER)
+                    .active(true)
+                    .build());
+
+            upsertDriverProfile(user, restaurant,
+                    vehicleTypes[(branchIndex + driverIndex) % vehicleTypes.length],
+                    buildLicensePlate(branchIndex, driverIndex),
+                    driverIndex % 3 != 0,
+                    25 + (branchIndex * 10) + driverIndex);
+        }
+        deactivateUnexpectedSeedDrivers(restaurant, expectedEmails);
+    }
+
+    private String buildLicensePlate(int branchIndex, int driverIndex) {
+        String province = switch (branchIndex % 5) {
+            case 0 -> "GP";
+            case 1 -> "WC";
+            case 2 -> "KZN";
+            case 3 -> "FS";
+            default -> "NW";
+        };
+        return province + " " + String.format("%02d", (branchIndex + 11) % 99) + " SW " + String.format("%03d", driverIndex + 101);
+    }
+
+    private Driver upsertDriverProfile(User user, Restaurant restaurant, String vehicleType, String licensePlate, boolean available, Integer totalDeliveries) {
         return driverRepository.findByUserId(user.getId())
                 .map(existing -> {
+                    existing.setRestaurant(restaurant);
                     existing.setVehicleType(vehicleType);
                     existing.setLicensePlate(licensePlate);
                     existing.setAvailable(available);
+                    existing.setActive(true);
+                    existing.setOnline(available);
                     existing.setTotalDeliveries(totalDeliveries);
                     return driverRepository.save(existing);
                 })
                 .orElseGet(() -> driverRepository.save(Driver.builder()
                         .user(user)
+                        .restaurant(restaurant)
                         .vehicleType(vehicleType)
                         .licensePlate(licensePlate)
                         .available(available)
+                        .active(true)
+                        .online(available)
                         .totalDeliveries(totalDeliveries)
                         .build()));
+    }
+
+    private void deactivateUnexpectedSeedDrivers(Restaurant restaurant, List<String> expectedEmails) {
+        String restaurantDomain = "@" + slugify(restaurant.getName()) + ".co.za";
+        driverRepository.findByRestaurantId(restaurant.getId(), Pageable.unpaged()).getContent().stream()
+                .filter(driver -> driver.getUser() != null && driver.getUser().getEmail() != null)
+                .filter(driver -> driver.getUser().getEmail().toLowerCase(Locale.ROOT).endsWith(restaurantDomain))
+                .filter(driver -> !expectedEmails.contains(driver.getUser().getEmail().toLowerCase(Locale.ROOT)))
+                .forEach(driver -> {
+                    driver.setActive(false);
+                    driver.setAvailable(false);
+                    driver.setOnline(false);
+                    driverRepository.save(driver);
+
+                    driver.getUser().setActive(false);
+                    userRepository.save(driver.getUser());
+                });
+    }
+
+    private void migrateLegacySeedDrivers() {
+        int updatedEmails = 0;
+        int deactivatedLegacyDrivers = 0;
+
+        List<Driver> drivers = driverRepository.findAll();
+        for (Driver driver : drivers) {
+            if (driver.getUser() == null) {
+                continue;
+            }
+
+            User user = driver.getUser();
+            if (user.getRole() != Role.DRIVER || user.getEmail() == null) {
+                continue;
+            }
+
+            String email = user.getEmail().toLowerCase(Locale.ROOT);
+            boolean looksLegacy = email.endsWith("@driver.co.za")
+                    || email.endsWith("@swifteats.com")
+                    || (email.endsWith("@swifteats.co.za") && email.startsWith("driver."))
+                    || (driver.getRestaurant() != null && !email.endsWith("@" + slugify(driver.getRestaurant().getName()) + ".co.za"));
+            if (!looksLegacy) {
+                continue;
+            }
+
+            if (driver.getRestaurant() != null) {
+                String desiredEmail = buildDriverEmail(driver.getUser().getFullName(), driver.getRestaurant(), driver.getId());
+                if (!desiredEmail.equalsIgnoreCase(user.getEmail())) {
+                    user.setEmail(desiredEmail);
+                    userRepository.save(user);
+                    updatedEmails++;
+                }
+            } else {
+                driver.setActive(false);
+                driver.setAvailable(false);
+                driver.setOnline(false);
+                driverRepository.save(driver);
+
+                user.setActive(false);
+                userRepository.save(user);
+                deactivatedLegacyDrivers++;
+            }
+        }
+
+        if (updatedEmails > 0 || deactivatedLegacyDrivers > 0) {
+            log.info("Driver seed migration applied. Updated emails: {}, deactivated legacy unscoped drivers: {}",
+                    updatedEmails, deactivatedLegacyDrivers);
+        }
+    }
+
+    private String buildDriverEmail(String fullName, Restaurant restaurant, Long driverId) {
+        String driverSlug = slugify(fullName);
+        String restaurantSlug = slugify(restaurant.getName());
+        String base = driverSlug + "@" + restaurantSlug + ".co.za";
+        User existingUser = userRepository.findByEmail(base).orElse(null);
+        if (existingUser == null || existingUser.getFullName().equalsIgnoreCase(fullName)) {
+            return base;
+        }
+        if (driverId != null) {
+            return driverSlug + "." + driverId + "@" + restaurantSlug + ".co.za";
+        }
+        return driverSlug + ".branch@" + restaurantSlug + ".co.za";
+    }
+
+    private String slugify(String value) {
+        return value.toLowerCase(Locale.ROOT)
+                .replace("'", "")
+                .replace("&", "and")
+                .replaceAll("[^a-z0-9]+", ".")
+                .replaceAll("^\\.+|\\.+$", "");
+    }
+
+    private void seedNotifications() {
+        for (User user : userRepository.findAll()) {
+            List<Notification> existingNotifications = new ArrayList<>(
+                    notificationRepository.findByUserId(user.getId(), Pageable.unpaged()).getContent()
+            );
+            if (!existingNotifications.isEmpty()) {
+                notificationRepository.deleteAll(existingNotifications);
+            }
+
+            notificationRepository.save(Notification.builder()
+                    .user(user)
+                    .type(NotificationType.SYSTEM)
+                    .title("Welcome to SwiftEats")
+                    .message("Your account is ready and your dashboard has been prepared with live demo data.")
+                    .referenceType("User")
+                    .referenceId(String.valueOf(user.getId()))
+                    .build());
+
+            notificationRepository.save(Notification.builder()
+                    .user(user)
+                    .type(roleNotificationType(user))
+                    .title(roleNotificationTitle(user))
+                    .message(roleNotificationMessage(user))
+                    .referenceType("User")
+                    .referenceId(String.valueOf(user.getId()))
+                    .build());
+        }
+    }
+
+    private NotificationType roleNotificationType(User user) {
+        return switch (user.getRole()) {
+            case DRIVER -> NotificationType.DRIVER_ASSIGNMENT;
+            case RESTAURANT_ADMIN -> NotificationType.ORDER_UPDATE;
+            case CUSTOMER -> NotificationType.PROMOTION;
+            default -> NotificationType.SYSTEM;
+        };
+    }
+
+    private String roleNotificationTitle(User user) {
+        return switch (user.getRole()) {
+            case DRIVER -> "Shift and delivery update";
+            case RESTAURANT_ADMIN -> "Branch activity update";
+            case CUSTOMER -> "Recommended for tonight";
+            default -> "Platform readiness update";
+        };
+    }
+
+    private String roleNotificationMessage(User user) {
+        return switch (user.getRole()) {
+            case DRIVER -> "You have active branch deliveries in your dashboard and your location sharing tools are ready.";
+            case RESTAURANT_ADMIN -> "Your branch menu, drivers, and trading hours are ready for today's operations.";
+            case CUSTOMER -> "New meals, scheduled delivery slots, and recent orders are available in your account.";
+            default -> "Seed data has been refreshed and the platform is ready for validation.";
+        };
     }
 
     private Restaurant upsertRestaurant(BranchSeed seed, User manager) {
@@ -370,6 +582,9 @@ public class DataSeeder implements CommandLineRunner {
         restaurant.setRating(seed.rating());
         restaurant.setManager(manager);
         restaurant.setActive(true);
+        restaurant.setAcceptingOrders(true);
+        restaurant.setPauseOrdersUntil(null);
+        restaurant.setHolidayHours(null);
         restaurant.setMondayHours("07:30-21:00");
         restaurant.setTuesdayHours("07:30-21:00");
         restaurant.setWednesdayHours("07:30-21:00");
@@ -624,18 +839,6 @@ public class DataSeeder implements CommandLineRunner {
         log.info("Drivers seeded: {}", driverRepository.count());
         log.info("Orders seeded: {}", orderRepository.count());
         log.info("Reviews seeded: {}", reviewRepository.count());
-    }
-
-    private record DriverSeed(
-            String fullName,
-            String email,
-            String phoneNumber,
-            String address,
-            String vehicleType,
-            String licensePlate,
-            boolean available,
-            int totalDeliveries
-    ) {
     }
 
     private record MenuSeed(

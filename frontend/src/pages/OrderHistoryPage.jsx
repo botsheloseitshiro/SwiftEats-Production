@@ -222,6 +222,7 @@ function OrderCard({ order, expanded, onToggle, formatDate, submittedState, onRe
           <div style={{ display: 'flex', gap: '16px', fontSize: '0.8125rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
             <span><Clock size={12} style={{ display: 'inline', marginRight: '4px' }} />{formatDate(order.createdAt)}</span>
             <span>Order #{order.id}</span>
+            {order.scheduledFor && <span>Scheduled: {formatDate(order.scheduledFor)}</span>}
             {order.driverName && <span>Driver: {order.driverName}</span>}
             {order.driverDetailsVisible && order.driverLicensePlate && (
               <span>

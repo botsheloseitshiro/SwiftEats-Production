@@ -14,6 +14,8 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, Long>, J
 
     List<Restaurant> findByActiveTrue();
 
+    List<Restaurant> findByManagerId(Long managerId);
+
     List<Restaurant> findByCategoryAndActiveTrue(String category);
 
     List<Restaurant> findByNameContainingIgnoreCaseAndActiveTrue(String name);
