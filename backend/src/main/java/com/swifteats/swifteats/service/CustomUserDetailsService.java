@@ -22,11 +22,12 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)  // Read-only transaction: optimized for SELECT queries
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        String normalizedEmail = User.normalizeEmail(email);
 
         // Fetch user from database (throws exception if not found)
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException(
-                        "User not found with email: " + email));
+                        "User not found with email: " + normalizedEmail));
 
         // Build the Spring Security authority from the user's role.
         // Spring Security expects the "ROLE_" prefix for hasRole() checks.

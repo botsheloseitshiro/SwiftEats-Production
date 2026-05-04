@@ -38,7 +38,8 @@ export default function LoginPage() {
   }, [initialMessage]);
 
   const handleChange = (event) => {
-    setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: name === 'email' ? value.toLowerCase() : value }));
     if (error) {
       setError('');
     }

@@ -50,15 +50,16 @@ public class PasswordResetService {
     public MessageResponse requestPasswordReset(ForgotPasswordRequest request) {
         passwordResetTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
 
-        Optional<User> userOptional = userRepository.findByEmail(request.getEmail());
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
+        Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
         if (userOptional.isEmpty()) {
-            log.info("Password reset requested for unknown email {}", request.getEmail());
-            throw new ResourceNotFoundException("No account exists for email '" + request.getEmail() + "'.");
+            log.info("Password reset requested for unknown email {}", normalizedEmail);
+            throw new ResourceNotFoundException("No account exists for email '" + normalizedEmail + "'.");
         }
 
         User user = userOptional.get();
         if (!user.isActive()) {
-            log.info("Password reset requested for inactive account {}", request.getEmail());
+            log.info("Password reset requested for inactive account {}", normalizedEmail);
             throw new IllegalStateException("This account is inactive. Please contact support.");
         }
 

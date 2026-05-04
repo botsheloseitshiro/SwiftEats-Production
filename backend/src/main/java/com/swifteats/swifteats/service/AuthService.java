@@ -36,14 +36,15 @@ public class AuthService {
 
     @Transactional
     public JwtResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new ResourceAlreadyExistsException(
-                    "An account with email '" + request.getEmail() + "' already exists.");
+                    "An account with email '" + normalizedEmail + "' already exists.");
         }
 
         User user = User.builder()
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phoneNumber(request.getPhoneNumber())
                 .address(request.getAddress())
@@ -53,7 +54,7 @@ public class AuthService {
 
         User savedUser = userRepository.save(user);
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword())
         );
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
@@ -65,13 +66,14 @@ public class AuthService {
 
     @Transactional
     public JwtResponse login(LoginRequest request) {
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword())
         );
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new RuntimeException("User not found after authentication"));
 
         log.info("User logged in: {}", user.getEmail());

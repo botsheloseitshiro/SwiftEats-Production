@@ -28,23 +28,25 @@ public class RestaurantAdminService {
 
     @Transactional
     public RestaurantRegistrationResponse registerRestaurant(RegisterRestaurantRequest request) {
+        String normalizedAdminEmail = User.normalizeEmail(request.getAdminEmail());
+
         // Step 1: Check if admin email already exists
-        if (userRepository.existsByEmail(request.getAdminEmail())) {
+        if (userRepository.existsByEmail(normalizedAdminEmail)) {
             throw new ResourceAlreadyExistsException(
-                    "An account with email '" + request.getAdminEmail() + "' already exists.");
+                    "An account with email '" + normalizedAdminEmail + "' already exists.");
         }
 
         // Step 2: Create RESTAURANT_ADMIN user account
         User restaurantAdmin = User.builder()
                 .fullName(request.getAdminFullName())
-                .email(request.getAdminEmail())
+                .email(normalizedAdminEmail)
                 .password(passwordEncoder.encode(request.getAdminPassword()))
                 .role(Role.RESTAURANT_ADMIN)
                 .active(true)
                 .build();
 
         User savedAdmin = userRepository.save(restaurantAdmin);
-        log.info("Restaurant admin account created: {} ({})", request.getAdminFullName(), request.getAdminEmail());
+        log.info("Restaurant admin account created: {} ({})", request.getAdminFullName(), normalizedAdminEmail);
 
         // Step 3: Create the restaurant
         GeocodingService.Coordinates coordinates = request.getLatitude() != null && request.getLongitude() != null
@@ -70,7 +72,7 @@ public class RestaurantAdminService {
                 .build();
 
         Restaurant savedRestaurant = restaurantRepository.save(restaurant);
-        log.info("Restaurant registered: '{}' managed by {}", request.getName(), request.getAdminEmail());
+        log.info("Restaurant registered: '{}' managed by {}", request.getName(), normalizedAdminEmail);
 
         // Step 4: Return response
         return RestaurantRegistrationResponse.builder()

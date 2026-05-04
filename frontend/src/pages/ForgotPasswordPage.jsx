@@ -91,7 +91,7 @@ export default function ForgotPasswordPage() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(event) => {
-                  setEmail(event.target.value);
+                  setEmail(event.target.value.toLowerCase());
                   if (error) setError('');
                 }}
                 autoComplete="email"

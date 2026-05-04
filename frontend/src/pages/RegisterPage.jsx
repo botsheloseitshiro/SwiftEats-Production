@@ -23,17 +23,18 @@ export default function RegisterPage() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const nextValue = name === 'email' ? value.toLowerCase() : value;
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
     if (apiError) setApiError('');
 
     // Real-time validation for specific fields
     if (name === 'password') {
-      validatePasswordRealtime(value);
+      validatePasswordRealtime(nextValue);
     } else if (name === 'email') {
-      validateEmailRealtime(value);
+      validateEmailRealtime(nextValue);
     } else if (name === 'phoneNumber') {
-      validatePhoneRealtime(value);
+      validatePhoneRealtime(nextValue);
     }
   };
 

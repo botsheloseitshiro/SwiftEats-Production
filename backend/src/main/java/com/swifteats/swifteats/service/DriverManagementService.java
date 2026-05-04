@@ -50,13 +50,14 @@ public class DriverManagementService {
 
     @Transactional
     public DriverDTO createDriver(AdminCreateDriverRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new ResourceAlreadyExistsException("An account with email '" + request.getEmail() + "' already exists.");
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new ResourceAlreadyExistsException("An account with email '" + normalizedEmail + "' already exists.");
         }
 
         User user = userRepository.save(User.builder()
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phoneNumber(request.getPhoneNumber())
                 .address(request.getAddress())
@@ -73,20 +74,21 @@ public class DriverManagementService {
                 .online(false)
                 .totalDeliveries(0)
                 .build());
-        auditLogService.log("DRIVER_CREATED", "admin", "Driver", String.valueOf(driver.getId()), Map.of("email", request.getEmail()));
+        auditLogService.log("DRIVER_CREATED", "admin", "Driver", String.valueOf(driver.getId()), Map.of("email", normalizedEmail));
         return DriverDTO.fromEntity(driver);
     }
 
     @Transactional
     public DriverDTO createDriverForRestaurant(String managerEmail, Long restaurantId, AdminCreateDriverRequest request) {
         Restaurant restaurant = getManagedRestaurant(managerEmail, restaurantId);
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new ResourceAlreadyExistsException("An account with email '" + request.getEmail() + "' already exists.");
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new ResourceAlreadyExistsException("An account with email '" + normalizedEmail + "' already exists.");
         }
 
         User user = userRepository.save(User.builder()
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phoneNumber(request.getPhoneNumber())
                 .address(request.getAddress())
@@ -109,7 +111,7 @@ public class DriverManagementService {
                 "Driver account created", "You have been added to " + restaurant.getName() + " as a restaurant driver.",
                 "Restaurant", String.valueOf(restaurant.getId()));
         auditLogService.log("RESTAURANT_DRIVER_CREATED", managerEmail, "Driver", String.valueOf(driver.getId()),
-                Map.of("restaurantId", restaurant.getId(), "email", request.getEmail()));
+                Map.of("restaurantId", restaurant.getId(), "email", normalizedEmail));
         return DriverDTO.fromEntity(driver);
     }
 
@@ -157,15 +159,16 @@ public class DriverManagementService {
     public DriverDTO updateDriverForRestaurant(String managerEmail, Long restaurantId, Long driverId, UpdateDriverRequest request) {
         Driver driver = getRestaurantDriver(managerEmail, restaurantId, driverId);
         User driverUser = driver.getUser();
+        String normalizedEmail = User.normalizeEmail(request.getEmail());
 
-        userRepository.findByEmail(request.getEmail())
+        userRepository.findByEmail(normalizedEmail)
                 .filter(existing -> !existing.getId().equals(driverUser.getId()))
                 .ifPresent(existing -> {
-                    throw new ResourceAlreadyExistsException("An account with email '" + request.getEmail() + "' already exists.");
+                    throw new ResourceAlreadyExistsException("An account with email '" + normalizedEmail + "' already exists.");
                 });
 
         driverUser.setFullName(request.getFullName());
-        driverUser.setEmail(request.getEmail());
+        driverUser.setEmail(normalizedEmail);
         driverUser.setPhoneNumber(request.getPhoneNumber());
         driverUser.setAddress(request.getAddress());
         driver.setVehicleType(request.getVehicleType());
@@ -174,7 +177,7 @@ public class DriverManagementService {
         userRepository.save(driverUser);
         Driver saved = driverRepository.save(driver);
         auditLogService.log("RESTAURANT_DRIVER_UPDATED", managerEmail, "Driver", String.valueOf(driverId),
-                Map.of("restaurantId", driver.getRestaurant().getId(), "email", request.getEmail()));
+                Map.of("restaurantId", driver.getRestaurant().getId(), "email", normalizedEmail));
         return DriverDTO.fromEntity(saved);
     }
 
