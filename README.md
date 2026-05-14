@@ -77,14 +77,46 @@ Top-level layout (important files):
 - [backend/src/main/resources/application-dev.yml](backend/src/main/resources/application-dev.yml) — dev config
 - [backend/src/main/resources/application-prod.yml](backend/src/main/resources/application-prod.yml) — prod config
 
-Code layout (high level):
+Code layout (detailed):
 
 backend/
  ├── src/main/java/com/swifteats/swifteats/
- ├── Dockerfile
+ │   ├── config/                # SecurityConfig, JwtTokenProvider, RateLimiting
+ │   ├── controller/            # AuthController, RestaurantController, OrderController, etc.
+ │   ├── dto/                   # Request/Response DTOs (RegisterRestaurantRequest, RestaurantDTO, OrderDTO)
+ │   ├── model/                 # JPA entities (User.java, Restaurant.java, MenuItem.java, Order.java)
+ │   ├── repository/            # Spring Data JPA repos (UserRepository, RestaurantRepository with Haversine)
+ │   ├── service/               # Business logic (AuthService, RestaurantService, OrderService)
+ │   ├── seeder/                # DataSeeder (@Profile("dev"))
+ │   ├── exception/             # GlobalExceptionHandler, custom exceptions
+ │   └── validation/            # Custom validators (PasswordValidator, PhoneNumberValidator)
+ ├── src/main/resources/
+ │   ├── application.properties
+ │   ├── application-dev.yml
+ │   └── application-prod.yml
+ └── Dockerfile
+
 frontend/
  ├── src/
- ├── public/
+ │   ├── components/            # Reusable React components (Navbar, Pagination, Cards)
+ │   ├── pages/                 # Page components (HomePage.jsx, MenuPage.jsx, ProfilePage.jsx)
+ │   ├── context/               # React contexts (AuthContext, CartContext, FavoritesContext)
+ │   ├── services/              # API wrappers (restaurant.service.js, auth.service.js)
+ │   ├── utils/                 # Helpers (formatters, distance calc)
+ │   └── styles/                # CSS / SASS files
+ ├── public/                    # static assets, index.html, images/
+ └── Dockerfile
+
+ops/
+ ├── docker-compose.yml        # Local orchestration (use Postgres service in compose if needed)
+ ├── .github/workflows/ci.yml   # CI pipeline definitions
+ └── nginx.conf                 # Optional reverse-proxy for production builds
+
+config/
+ ├── .env.example               # Example environment variables for dev/prod
+
+Other top-level file:
+ - README.md
 
 ## Installation
 
@@ -165,13 +197,6 @@ Use Flyway (planned) for schema migrations in production.
 
 - Challenge: Seeder running in production.
   Solution: `@Profile("dev")` added to DataSeeder.
-
-## Future Improvements
-
-- Flyway database migrations
-- Redis caching for menus and restaurant lists
-- Real-time WebSocket order tracking
-- OAuth2 social login
 
 ## Testing
 
