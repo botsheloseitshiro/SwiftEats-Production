@@ -30,14 +30,6 @@ Why it matters
 - Multi-stage Dockerfiles and docker-compose setup
 - GitHub Actions CI for build/test
 
-## Screenshots
-
-Include screenshots in `frontend/public/images/` and reference them here.
-
-Example:
-
-![Home](frontend/public/images/home-screenshot.png)
-
 ## Tech Stack
 
 Frontend:
